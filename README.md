@@ -1,58 +1,115 @@
-
 # dotfig
 
+Manage individual config files with a git-friendly tree. `dotfig` stores files
+under a root directory that mirrors their path in `$HOME`, then replaces each
+source file with a symlink to the stored copy. Commit the root to git and check
+it out on other machines to sync your configs.
 
-## overview
+## Requirements
 
-Dotfig is an app that manages individual config files.  It stores them in a dir
-that mirrors the path to the original config file and creates a symlink from the
-dotfig dir to the source config dir.  This is similar to how gnu stow works.
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) (recommended)
 
-The dotfig dir can be commited to git, and checked out on other machines.  This
-way configs can be synced across machines.
+## Install
 
+Install the CLI as a standalone tool:
 
-## commands
+```sh
+uv tool install .
+dotfig --help
+```
+
+Or work from a checkout:
+
+```sh
+git clone <repo-url> dotfig
+cd dotfig
+uv sync
+uv run dotfig --help
+```
+
+## Usage
+
+Every command supports `-h` / `--help`.
 
 ### init
-`dotfig init PATH`
-create $HOME/.dotfig
-if PATH doesn't exist:
-  create PATH
+
+```sh
+dotfig init PATH
+```
+
+Create `PATH` (the dotfig root) if it doesn't exist and write the config file
+`$HOME/.dotfig`. Use `--force` to overwrite an existing config.
+
+```sh
+dotfig init ~/dotfiles
+```
 
 ### list
-`dotfig list`
-list all managed config files
+
+```sh
+dotfig list
+```
+
+List every stored file with its source path and link status: `linked`,
+`not linked`, `missing`, or `wrong link -> <target>`. The `.git` directory is
+skipped so the root can itself be a git repo.
 
 ### store
-`dotfig store FILE`
-if FILE isn't managed:
-  duplicate path to FILE under dotfig root
-  mv FILE to root
-  symlink FILE back to source
-elif FILE is managed and different:
-  issue error and do nothing
-elif FILE is managed and the same:
-  issue notification that they are the same and do nothing
+
+```sh
+dotfig store FILE
+```
+
+Move `FILE` into the root, mirroring its `$HOME` path, and symlink `FILE` back
+to the stored copy.
+
+- If `FILE` is already a correct symlink into the root: report it and do nothing.
+- If a stored copy exists with the same contents: replace `FILE` with a symlink.
+- If a stored copy exists with different contents: error and change nothing.
+- `FILE` must be under `$HOME` and is never resolved through symlinks.
 
 ### restore
-`dotfig restore FILE`
-if FILE doesn't exist:
-  make dir and symlink to source
-elif FILE is a file and is the same:
-  rm file and symlink FILE to config dir
-elif FILE is a file and is different:
-  stop and issue warning
-elif FILE is a symlink to root:
-  do nothing, FILE is already setup
 
-
-## dotfig config file
-Stores the location of the dotfig tree location.  It is in toml format,
-butdoesn't have the `.toml` extention.
-
-.dotfig
+```sh
+dotfig restore FILE
 ```
--*- mode: toml -*-
-root = $HOME/bin/dotfig
+
+Recreate the symlink for `FILE` from the stored copy.
+
+- If `FILE` is missing: create parent dirs and symlink it to the stored copy.
+- If `FILE` is a regular file with identical contents: replace it with a symlink.
+- If `FILE` is a regular file with different contents: error and change nothing.
+- If `FILE` is a foreign symlink: error. If it already points at the root: no-op.
+- If there is no stored copy: error (`nothing to restore`).
+
+## Config file
+
+`$HOME/.dotfig` stores the root location in TOML, without the `.toml`
+extension. `~` and environment variables are expanded when it is loaded.
+
+```toml
+# -*- mode: toml -*-
+root = "/home/you/dotfiles"
 ```
+
+## Development
+
+```sh
+uv sync                      # create .venv and install dependencies
+uv run dotfig                # run the CLI from the checkout
+
+uv run pytest                # tests
+uv run pytest tests/test_core.py -k store   # a single test
+
+uv run ruff check            # lint (strict: all rules)
+uv run ruff format           # format
+uv run ty check              # typecheck
+```
+
+Layout:
+
+- `src/dotfig/cli.py` -- click + rich commands
+- `src/dotfig/core.py` -- store/restore/list state machine and path mapping
+- `src/dotfig/config.py` -- `$HOME/.dotfig` load/save
+- `tests/` -- pytest suite
