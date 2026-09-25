@@ -1,3 +1,5 @@
+"""Store config files in a dotfig tree and symlink them back into $HOME."""
+
 from __future__ import annotations
 
 import hashlib
@@ -13,13 +15,20 @@ _CHUNK_SIZE = 1024 * 1024
 
 @dataclass(frozen=True)
 class Entry:
+    """A stored file and the state of its link back into $HOME."""
+
     source: Path
     stored: Path
     status: str
 
 
 def absolute(path: Path) -> Path:
-    """Make a path absolute without resolving symlinks."""
+    """Make a path absolute without resolving symlinks.
+
+    Returns:
+        The expanded, absolute path.
+
+    """
     expanded = Path(os.path.expandvars(str(path))).expanduser()
     return Path(os.path.abspath(expanded))
 
@@ -29,6 +38,15 @@ def _home(home: Path | None) -> Path:
 
 
 def stored_path(cfg: Config, file: Path, *, home: Path | None = None) -> Path:
+    """Map a file under $HOME to its location in the dotfig root.
+
+    Returns:
+        The path of the file's stored copy.
+
+    Raises:
+        DotfigError: If the file is outside $HOME.
+
+    """
     file = absolute(file)
     base = _home(home)
     try:
@@ -44,10 +62,9 @@ def _link_target(file: Path) -> Path | None:
     if not file.is_symlink():
         return None
     try:
-        target = os.readlink(file)
+        target_path = file.readlink()
     except OSError:
         return None
-    target_path = Path(target)
     if not target_path.is_absolute():
         target_path = file.parent / target_path
     return absolute(target_path)
@@ -59,6 +76,12 @@ def _ensure_source(cfg: Config, file: Path) -> None:
 
 
 def digest(path: Path) -> bytes:
+    """Hash a file with SHA-256.
+
+    Returns:
+        The raw SHA-256 digest of the file contents.
+
+    """
     hasher = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(_CHUNK_SIZE), b""):
@@ -67,6 +90,12 @@ def digest(path: Path) -> bytes:
 
 
 def contents_equal(first: Path, second: Path) -> bool:
+    """Compare two files by size and SHA-256 digest.
+
+    Returns:
+        Whether both files have identical contents.
+
+    """
     if first.stat().st_size != second.stat().st_size:
         return False
     return digest(first) == digest(second)
@@ -74,10 +103,19 @@ def contents_equal(first: Path, second: Path) -> bool:
 
 def _link(stored: Path, source: Path) -> None:
     source.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(stored, source)
+    source.symlink_to(stored)
 
 
 def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
+    """Store a file by moving it into the root and linking it back.
+
+    Returns:
+        A message describing what was done.
+
+    Raises:
+        DotfigError: If the file cannot be stored safely.
+
+    """
     file = absolute(file)
     _ensure_source(cfg, file)
     stored = stored_path(cfg, file, home=home)
@@ -89,9 +127,7 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
                 f"{file} is a symlink to {target}, not to the dotfig root"
             )
         if not stored.exists():
-            raise DotfigError(
-                f"{file} is a broken link; the stored copy at {stored} is missing"
-            )
+            raise DotfigError(f"{file} is a broken link; {stored} is missing")
         return f"{file} is already stored"
 
     if not file.exists():
@@ -117,6 +153,15 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
 
 
 def restore(cfg: Config, file: Path, *, home: Path | None = None) -> str:
+    """Restore a file from the dotfig root by linking it back.
+
+    Returns:
+        A message describing what was done.
+
+    Raises:
+        DotfigError: If the stored copy is missing or the file conflicts.
+
+    """
     file = absolute(file)
     _ensure_source(cfg, file)
     stored = stored_path(cfg, file, home=home)
@@ -136,7 +181,9 @@ def restore(cfg: Config, file: Path, *, home: Path | None = None) -> str:
         if not file.is_file():
             raise DotfigError(f"{file} is a directory; refusing to replace it")
         if not contents_equal(file, stored):
-            raise DotfigError(f"{file} differs from {stored}; refusing to overwrite it")
+            raise DotfigError(
+                f"{file} differs from {stored}; refusing to overwrite it"
+            )
         file.unlink()
 
     _link(stored, file)
@@ -155,6 +202,15 @@ def _source_status(source: Path, stored: Path) -> str:
 
 
 def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
+    """List every file stored under the dotfig root.
+
+    Returns:
+        One entry per stored file, with its link status.
+
+    Raises:
+        DotfigError: If the dotfig root does not exist.
+
+    """
     if not cfg.root.is_dir():
         raise DotfigError(
             f"dotfig root {cfg.root} does not exist; run 'dotfig init PATH'"
@@ -168,7 +224,9 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
             source = base / stored.relative_to(cfg.root)
             entries.append(
                 Entry(
-                    source=source, stored=stored, status=_source_status(source, stored)
+                    source=source,
+                    stored=stored,
+                    status=_source_status(source, stored),
                 )
             )
     return entries

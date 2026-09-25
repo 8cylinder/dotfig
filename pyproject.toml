@@ -27,20 +27,57 @@ requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
 
-# [tool.ty.rules]
-# dynamic-function-decorator-return = "error"
-# missing-type-argument = "error"
-# possibly-unresolved-reference = "warn"
-# unsound-return-statement = "error"
+[tool.uv]
+required-version = ">=0.12.17,<0.13"
+add-bounds = "exact"
+
+[tool.uv.pip]
+strict = true
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ty.analysis]
+strict-equality-semantics = true
+strict-generic-narrowing = true
+respect-type-ignore-comments = false
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ruff]
+target-version = "py313"
+line-length = 80
+src = ["src"]
 
 [tool.ruff.lint]
-#extend-select = ["ANN", "PYI"]
-select = ["ANN"]
-#preview = true
+select = ["ALL"]
+preview = true
+extend-ignore = [
+    "missing-trailing-comma",             # conflicts with the formatter
+    "single-line-implicit-string-concatenation",  # conflicts with the formatter
+    "incorrect-blank-line-before-class",  # conflicts with D211
+    "multi-line-summary-second-line",     # conflicts with D212
+    "missing-copyright-notice",           # no copyright headers in this project
+    "raw-string-in-exception",            # literal message passed to an exception
+    "f-string-in-exception",              # f-string message passed to an exception
+    "raise-vanilla-args",                 # long messages are intentional for DotfigError
+    "os-path-abspath",                    # abspath is required to avoid resolving symlinks
+]
 
-#[tool.ruff.lint]
-# Enable all available rules, including preview rules
-#select = ["ALL"]
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "assert",                         # pytest uses assertions
+    "undocumented-public-module",     # no docstrings in tests
+    "undocumented-public-class",
+    "undocumented-public-method",
+    "undocumented-public-function",
+    "undocumented-public-package",
+    "undocumented-magic-method",
+    "implicit-namespace-package",     # tests is not a package
+    "unused-function-argument",       # fixtures may be requested for side effects only
+    "typing-only-standard-library-import",  # imports used only in annotations
+]
 
-#[tool.ruff.lint]
-#select = ["ANN"] # Enforces missing type annotations
+[tool.ruff.format]
+docstring-code-format = true

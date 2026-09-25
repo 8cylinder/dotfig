@@ -63,7 +63,9 @@ def test_load_expands_environment_variables(
     assert Config.load(path=path).root == tmp_path / "tree"
 
 
-def test_load_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_expands_tilde(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     path = tmp_path / "config"
     path.write_text('root = "~/tree"\n')

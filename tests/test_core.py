@@ -10,7 +10,7 @@ from dotfig.config import Config, DotfigError
 
 def make_file(path: Path, content: str = "hello") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     return path
 
 
@@ -109,7 +109,9 @@ def test_restore_missing_source_creates_link(cfg: Config, home: Path) -> None:
     assert file.read_text() == "data"
 
 
-def test_restore_regular_file_same_becomes_link(cfg: Config, home: Path) -> None:
+def test_restore_regular_file_same_becomes_link(
+    cfg: Config, home: Path
+) -> None:
     file = make_file(home / ".bashrc", "same")
     make_file(cfg.root / ".bashrc", "same")
     core.restore(cfg, file)
@@ -143,7 +145,9 @@ def test_restore_foreign_symlink_raises(cfg: Config, home: Path) -> None:
         core.restore(cfg, file)
 
 
-def test_list_managed_skips_git_and_reports_status(cfg: Config, home: Path) -> None:
+def test_list_managed_skips_git_and_reports_status(
+    cfg: Config, home: Path
+) -> None:
     make_file(cfg.root / ".git" / "config")
     linked = make_file(home / ".bashrc")
     core.store(cfg, linked)

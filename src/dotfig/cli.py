@@ -1,8 +1,10 @@
+"""Command-line interface for managing a dotfig tree."""
+
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -11,6 +13,9 @@ from rich.table import Table
 
 from . import core
 from .config import Config, DotfigError, config_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 console = Console()
 
@@ -33,10 +38,17 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("path", type=click.Path(path_type=Path))
-@click.option("--force", is_flag=True, help="Overwrite an existing dotfig config.")
+@click.option(
+    "--force", is_flag=True, help="Overwrite an existing dotfig config."
+)
 @_handle_errors
-def init(path: Path, force: bool) -> None:
-    """Create PATH as the dotfig root and write the config file."""
+def init(path: Path, *, force: bool) -> None:
+    """Create PATH as the dotfig root and write the config file.
+
+    Raises:
+        ClickException: If the config exists and --force was not given.
+
+    """
     cfg_path = config_path()
     if cfg_path.exists() and not force:
         raise click.ClickException(
@@ -66,7 +78,9 @@ def list_command() -> None:
             color = "red"
         else:
             color = "yellow"
-        table.add_row(escape(str(entry.source)), f"[{color}]{escape(entry.status)}[/]")
+        table.add_row(
+            escape(str(entry.source)), f"[{color}]{escape(entry.status)}[/]"
+        )
     console.print(table)
 
 
@@ -88,4 +102,9 @@ def restore(file: Path) -> None:
     console.print(core.restore(cfg, file))
 
 
-__all__ = ["cli"]
+def main() -> None:
+    """Run the dotfig command-line interface."""
+    cli()
+
+
+__all__ = ["cli", "main"]
