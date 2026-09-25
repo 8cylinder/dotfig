@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 console = Console()
 
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 
 def _handle_errors[**P](func: Callable[P, None]) -> Callable[P, None]:
     @functools.wraps(func)
@@ -31,7 +33,7 @@ def _handle_errors[**P](func: Callable[P, None]) -> Callable[P, None]:
     return wrapper
 
 
-@click.group()
+@click.group(context_settings=CONTEXT_SETTINGS)
 def cli() -> None:
     """Manage individual config files with a git-friendly dotfig tree."""
 
