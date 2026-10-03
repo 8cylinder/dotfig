@@ -217,6 +217,46 @@ def test_restore_dry_run_already_linked(cfg: Config, home: Path) -> None:
     assert "already linked" in report
 
 
+def test_diff_shows_changes(tmp_path: Path) -> None:
+    stored = make_file(tmp_path / "stored", "new\n")
+    dest = make_file(tmp_path / "dest", "old\n")
+    result = core.diff(stored, dest)
+    assert "-old" in result
+    assert "+new" in result
+
+
+def test_diff_identical_files_is_empty(tmp_path: Path) -> None:
+    stored = make_file(tmp_path / "stored", "same\n")
+    dest = make_file(tmp_path / "dest", "same\n")
+    assert not core.diff(stored, dest)
+
+
+def test_restore_force_overwrites_different_contents(
+    cfg: Config, home: Path
+) -> None:
+    make_file(cfg.root / ".bashrc", "stored\n")
+    file = make_file(home / ".bashrc", "local\n")
+    message = core.restore(cfg, Path(".bashrc"), force=True)
+    assert file.is_symlink()
+    assert file.read_text() == "stored\n"
+    backup = home / ".bashrc.BAK"
+    assert backup.read_text() == "local\n"
+    assert "backed up" in message
+
+
+def test_restore_force_dry_run_reports_overwrite(
+    cfg: Config, home: Path
+) -> None:
+    make_file(cfg.root / ".bashrc", "stored\n")
+    file = make_file(home / ".bashrc", "local\n")
+    report = core.restore(cfg, Path(".bashrc"), dry_run=True, force=True)
+    assert "would symlink: yes" in report
+    assert "back up" in report
+    assert file.read_text() == "local\n"
+    assert not file.is_symlink()
+    assert not (home / ".bashrc.BAK").exists()
+
+
 def test_list_managed_skips_git_and_reports_status(
     cfg: Config, home: Path
 ) -> None:
@@ -242,13 +282,20 @@ def test_list_managed_wrong_link(cfg: Config, home: Path) -> None:
     assert entry.status.startswith("wrong link")
 
 
-def test_display_path_keeps_anchor_name(cfg: Config, home: Path) -> None:
+def test_display_path_uses_home_tilde(cfg: Config, home: Path) -> None:
     stored = cfg.root / ".config" / "app" / "conf"
-    assert core.display_path(cfg.root, stored) == (
-        f"{cfg.root.name}/.config/app/conf"
+    assert core.display_path(home, stored) == (
+        f"~/{cfg.root.name}/.config/app/conf"
     )
     source = home / ".config" / "app" / "conf"
-    assert core.display_path(home, source) == (f"{home.name}/.config/app/conf")
+    assert core.display_path(home, source) == "~/.config/app/conf"
+    assert core.display_path(home, home / "elsewhere") == "~/elsewhere"
+
+
+def test_display_path_outside_home_is_absolute(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    outside = tmp_path / "other" / "file"
+    assert core.display_path(home, outside) == str(outside)
 
 
 def test_list_managed_missing_root_raises(home: Path) -> None:

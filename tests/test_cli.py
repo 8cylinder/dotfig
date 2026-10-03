@@ -7,8 +7,8 @@ from click.testing import CliRunner, Result
 from dotfig.cli import cli
 
 
-def run(args: list[str]) -> Result:
-    return CliRunner().invoke(cli, args)
+def run(args: list[str], input_text: str | None = None) -> Result:
+    return CliRunner().invoke(cli, args, input=input_text)
 
 
 def output(result: Result) -> str:
@@ -96,6 +96,129 @@ def test_restore_dry_run_makes_no_changes(home: Path) -> None:
     assert not (home / ".bashrc").exists()
 
 
+def test_restore_diff_shows_changes(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--diff", ".bashrc"])
+    assert result.exit_code != 0
+    text = output(result)
+    assert "-local" in text
+    assert "+stored" in text
+    assert config.read_text() == "local\n"
+
+    no_diff = run(["restore", ".bashrc"])
+    assert "-local" not in output(no_diff)
+
+
+def test_restore_dry_run_diff(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    (home / ".bashrc").write_text("local\n")
+
+    result = run(["restore", "--dry-run", "--diff", ".bashrc"])
+    assert result.exit_code == 0, output(result)
+    assert "-local" in output(result)
+    assert "+stored" in output(result)
+
+
+def test_restore_force_diff_shows_diff(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", "--diff", ".bashrc"], "y\n")
+    assert result.exit_code == 0, output(result)
+    text = output(result)
+    assert "-local" in text
+    assert "+stored" in text
+    assert config.is_symlink()
+    assert config.read_text() == "stored\n"
+
+
+def test_restore_force_overwrites_different_contents(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", ".bashrc"], "y\n")
+    assert result.exit_code == 0, output(result)
+    assert "This will overwrite" in output(result)
+    assert "Continue? [y/N/(d)iff]" in output(result)
+    assert config.is_symlink()
+    assert config.read_text() == "stored\n"
+    assert (home / ".bashrc.BAK").read_text() == "local\n"
+
+
+def test_restore_force_prompt_shows_diff_then_overwrites(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", ".bashrc"], "d\ny\n")
+    assert result.exit_code == 0, output(result)
+    text = output(result)
+    assert "-local" in text
+    assert "+stored" in text
+    assert text.count("Continue? [y/N/(d)iff]") > 1
+    assert config.is_symlink()
+    assert config.read_text() == "stored\n"
+
+
+def test_restore_force_prompt_diff_then_aborts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", ".bashrc"], "d\nn\n")
+    assert result.exit_code != 0
+    text = output(result)
+    assert "-local" in text
+    assert "+stored" in text
+    assert text.count("Continue? [y/N/(d)iff]") > 1
+    assert config.read_text() == "local\n"
+    assert not config.is_symlink()
+    assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_force_prompt_aborts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", ".bashrc"], "n\n")
+    assert result.exit_code != 0
+    assert "Continue?" in output(result)
+    assert config.read_text() == "local\n"
+    assert not config.is_symlink()
+    assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_force_without_conflict_does_not_prompt(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+
+    result = run(["restore", "--force", ".bashrc"])
+    assert result.exit_code == 0, output(result)
+    assert "Continue?" not in output(result)
+    assert (home / ".bashrc").is_symlink()
+
+
 def test_list_without_init_fails(home: Path) -> None:
     result = run(["list"])
     assert result.exit_code != 0
@@ -121,6 +244,6 @@ def test_list_shows_source_and_destination(home: Path) -> None:
     text = output(listed)
     assert "source" in text
     assert "destination" in text
-    assert "tree/.bashrc" in text
-    assert f"{home.name}/.bashrc" in text
+    assert "~/tree/.bashrc" in text
+    assert "~/.bashrc" in text
     assert "linked" in text

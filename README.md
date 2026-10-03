@@ -52,9 +52,9 @@ dotfig list
 ```
 
 List every stored file with three columns: `source` (the stored path in the
-root, prefixed with the root directory's name), `destination` (the mirrored
-path under `$HOME`, prefixed with the home directory's name), and the link
-status: `linked`, `not linked`, `missing`, or `wrong link -> <target>`. The
+root), `destination` (the mirrored path under `$HOME`), and the link status:
+`linked`, `not linked`, `missing`, or `wrong link -> <target>`. Paths under
+`$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
 `.git` directory is skipped so the root can itself be a git repo.
 
 ### store
@@ -95,10 +95,16 @@ and whether a symlink would be created (or why not).
 - If the destination is a regular file with identical contents: rename it to
   `<name>.BAK`, then symlink it to the stored copy.
 - If the destination is a regular file with different contents: warn and change
-  nothing.
+  nothing. Pass `--diff` to also print a unified diff of the difference, or `--force` to back the file up to `<name>.BAK`
+  and replace it with a link to the stored copy. `--force` asks for
+  confirmation (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to
+  print the diff and be asked again.
 - If the destination is a foreign symlink: error. If it already points at the
   root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
+
+`--diff` and `--force` combine with `--dry-run` to show what would happen
+without touching the filesystem.
 
 ## Config file
 

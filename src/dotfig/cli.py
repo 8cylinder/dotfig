@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 from rich.markup import escape
+from rich.syntax import Syntax
 from rich.table import Table
 
 from . import core
@@ -82,7 +83,7 @@ def list_command() -> None:
         else:
             color = "yellow"
         table.add_row(
-            escape(core.display_path(cfg.root, entry.stored)),
+            escape(core.display_path(home, entry.stored)),
             escape(core.display_path(home, entry.source)),
             f"[{color}]{escape(entry.status)}[/]",
         )
@@ -106,11 +107,68 @@ def store(file: Path) -> None:
     is_flag=True,
     help="Show what would happen without changing anything.",
 )
+@click.option(
+    "--diff",
+    "show_diff",
+    is_flag=True,
+    help="Show a diff when the destination differs from the stored copy.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite a differing destination with the stored copy.",
+)
 @_handle_errors
-def restore(file: Path, *, dry_run: bool) -> None:
+def restore(file: Path, *, dry_run: bool, show_diff: bool, force: bool) -> None:
     """Restore FILE from the dotfig root."""
     cfg = Config.load()
-    console.print(core.restore(cfg, file, dry_run=dry_run))
+    if show_diff:
+        _show_diff(cfg, file)
+    if force and not dry_run:
+        _confirm_overwrite(cfg, file)
+    console.print(core.restore(cfg, file, dry_run=dry_run, force=force))
+
+
+def _differs(stored: Path, dest: Path) -> bool:
+    return (
+        stored.is_file()
+        and dest.is_file()
+        and not dest.is_symlink()
+        and not core.contents_equal(dest, stored)
+    )
+
+
+def _show_diff(cfg: Config, file: Path) -> None:
+    stored, dest = core.restore_paths(cfg, file)
+    if _differs(stored, dest):
+        console.print(
+            Syntax(core.diff(stored, dest), "diff", theme="ansi_dark")
+        )
+
+
+def _confirm_overwrite(cfg: Config, file: Path) -> None:
+    stored, dest = core.restore_paths(cfg, file)
+    if not _differs(stored, dest):
+        return
+    while True:
+        answer = str(
+            click.prompt(
+                f"This will overwrite {dest} with {stored}. Continue?",
+                prompt_suffix=" [y/N/(d)iff]: ",
+                default="n",
+                show_default=False,
+                show_choices=False,
+                type=click.Choice(["y", "n", "d"], case_sensitive=False),
+            )
+        ).lower()
+        if answer == "d":
+            console.print(
+                Syntax(core.diff(stored, dest), "diff", theme="ansi_dark")
+            )
+            continue
+        if answer == "y":
+            return
+        raise click.Abort
 
 
 def main() -> None:

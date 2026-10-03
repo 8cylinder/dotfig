@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 import shutil
@@ -96,6 +97,20 @@ def resolve_stored(cfg: Config, file: Path) -> Path:
     return stored
 
 
+def restore_paths(
+    cfg: Config, file: Path, *, home: Path | None = None
+) -> tuple[Path, Path]:
+    """Resolve FILE to its stored copy and its destination under $HOME.
+
+    Returns:
+        A ``(stored, dest)`` pair.
+
+    """
+    stored = resolve_stored(cfg, file)
+    dest = _home(home) / stored.relative_to(cfg.root)
+    return stored, dest
+
+
 def digest(path: Path) -> bytes:
     """Hash a file with SHA-256.
 
@@ -120,6 +135,30 @@ def contents_equal(first: Path, second: Path) -> bool:
     if first.stat().st_size != second.stat().st_size:
         return False
     return digest(first) == digest(second)
+
+
+def diff(stored: Path, dest: Path) -> str:
+    """Diff DEST against STORED.
+
+    Returns:
+        The unified diff of DEST becoming STORED, or an empty string when the
+        files are identical.
+
+    """
+    dest_lines = dest.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    stored_lines = stored.read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines(keepends=True)
+    return "".join(
+        difflib.unified_diff(
+            dest_lines,
+            stored_lines,
+            fromfile=str(dest),
+            tofile=str(stored),
+        )
+    ).rstrip("\n")
 
 
 def _link(stored: Path, source: Path) -> None:
@@ -173,7 +212,7 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
     return f"stored {file}"
 
 
-def _dry_run_report(stored: Path, dest: Path) -> str:
+def _dry_run_report(stored: Path, dest: Path, *, force: bool = False) -> str:
     """Describe what restore would do, without changing anything.
 
     Returns:
@@ -199,7 +238,11 @@ def _dry_run_report(stored: Path, dest: Path) -> str:
             action = f"yes (back up to {backup}, then link to {stored})"
         else:
             same = "no"
-            action = "no (contents differ from stored)"
+            if force:
+                backup = dest.with_name(f"{dest.name}.BAK")
+                action = f"yes (back up to {backup}, then link to {stored})"
+            else:
+                action = "no (contents differ from stored)"
     else:
         same = "n/a"
         action = f"yes (link to {stored})"
@@ -214,7 +257,12 @@ def _dry_run_report(stored: Path, dest: Path) -> str:
 
 
 def restore(
-    cfg: Config, file: Path, *, home: Path | None = None, dry_run: bool = False
+    cfg: Config,
+    file: Path,
+    *,
+    home: Path | None = None,
+    dry_run: bool = False,
+    force: bool = False,
 ) -> str:
     """Restore a stored file by linking it back into $HOME.
 
@@ -229,14 +277,13 @@ def restore(
         DotfigError: If the stored copy is missing or the destination conflicts.
 
     """
-    stored = resolve_stored(cfg, file)
-    dest = _home(home) / stored.relative_to(cfg.root)
+    stored, dest = restore_paths(cfg, file, home=home)
 
     if not stored.is_file():
         raise DotfigError(f"no stored copy at {stored}; nothing to restore")
 
     if dry_run:
-        return _dry_run_report(stored, dest)
+        return _dry_run_report(stored, dest, force=force)
 
     if dest.is_symlink():
         target = _link_target(dest)
@@ -249,7 +296,7 @@ def restore(
     if dest.exists():
         if not dest.is_file():
             raise DotfigError(f"{dest} is a directory; refusing to replace it")
-        if not contents_equal(dest, stored):
+        if not contents_equal(dest, stored) and not force:
             raise DotfigError(
                 f"{dest} differs from {stored}; refusing to overwrite it"
             )
@@ -273,14 +320,20 @@ def _source_status(source: Path, stored: Path) -> str:
     return "missing"
 
 
-def display_path(anchor: Path, path: Path) -> str:
-    """Render a path below an anchor directory, keeping the anchor's name.
+def display_path(home: Path, path: Path) -> str:
+    """Render a path relative to the home directory.
 
     Returns:
-        PATH relative to ANCHOR, prefixed with ANCHOR's directory name.
+        PATH as ``~/...`` when it is under HOME, otherwise its absolute path.
 
     """
-    return str(Path(anchor.name) / path.relative_to(anchor))
+    try:
+        relative = path.relative_to(home)
+    except ValueError:
+        return str(path)
+    if relative == Path():
+        return "~"
+    return str(Path("~") / relative)
 
 
 def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
