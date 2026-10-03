@@ -434,3 +434,45 @@ def test_list_shows_source_and_destination(home: Path) -> None:
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "linked" in text
+
+
+def test_completion_install_bash(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = home / "data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+
+    result = run(["install-completions", "bash"])
+    assert result.exit_code == 0, output(result)
+    script = data / "bash-completion" / "completions" / "dotfig"
+    assert script.is_file()
+    assert "_dotfig_completion" in script.read_text()
+    text = output(result)
+    assert "created" in text
+    assert f"source {script}" in text
+
+
+def test_completion_install_reports_overwrite(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = home / "data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+
+    assert run(["install-completions", "bash"]).exit_code == 0
+    second = run(["install-completions", "bash"])
+    assert second.exit_code == 0, output(second)
+    assert "overwrote" in output(second)
+
+
+def test_completion_install_defaults_to_shell_env(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = home / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+
+    result = run(["install-completions"])
+    assert result.exit_code == 0, output(result)
+    script = config / "fish" / "completions" / "dotfig.fish"
+    assert script.is_file()
+    assert "_dotfig_completion" in script.read_text()

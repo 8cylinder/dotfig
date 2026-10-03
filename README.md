@@ -19,6 +19,23 @@ uv tool install .
 dotfig --help
 ```
 
+After installing, add shell completion:
+
+```sh
+dotfig install-completions           # detect the shell from $SHELL
+dotfig install-completions bash      # or name it explicitly
+```
+
+This writes a completion script to the standard per-user location
+(`~/.local/share/bash-completion/completions/dotfig` for bash,
+`~/.config/fish/completions/dotfig.fish` for fish, etc.), so no shell config
+edit is needed. To enable completion for just the current session instead, use
+Click's built-in mechanism:
+
+```sh
+eval "$(_DOTFIG_COMPLETE=bash_source dotfig)"
+```
+
 Or work from a checkout:
 
 ```sh

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import functools
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
+from click.shell_completion import get_completion_class
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -220,6 +222,54 @@ def _confirm_overwrite(
         if answer == "y":
             return
         raise click.Abort
+
+
+_SHELLS = ("bash", "zsh", "fish", "powershell")
+
+
+def _default_shell() -> str:
+    name = Path(os.environ.get("SHELL", "")).name
+    return name if name in _SHELLS else "bash"
+
+
+def _completion_path(shell: str) -> Path:
+    data = Path(
+        os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    )
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return {
+        "bash": data / "bash-completion" / "completions" / "dotfig",
+        "zsh": data / "zsh" / "site-functions" / "_dotfig",
+        "fish": config / "fish" / "completions" / "dotfig.fish",
+        "powershell": config / "dotfig" / "completions.ps1",
+    }[shell]
+
+
+def _completion_script(shell: str) -> str:
+    complete_class = get_completion_class(shell)
+    if complete_class is None:
+        raise DotfigError(f"unsupported shell: {shell}")
+    return complete_class(cli, {}, "dotfig", "_DOTFIG_COMPLETE").source()
+
+
+@cli.command(name="install-completions")
+@click.argument("shell", type=click.Choice(_SHELLS), required=False)
+@_handle_errors
+def install_completions(shell: str | None) -> None:
+    """Write a completion script for SHELL (default: from $SHELL)."""
+    shell = shell or _default_shell()
+    path = _completion_path(shell)
+    existed = path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_completion_script(shell), encoding="utf-8")
+    console.print(f"{'overwrote' if existed else 'created'} {path}")
+    command = f". {path}" if shell == "powershell" else f"source {path}"
+    console.print("to enable completion in this shell, run:", soft_wrap=True)
+    console.print(f"  {command}", soft_wrap=True)
+    if shell == "zsh":
+        console.print(
+            "make sure that directory is in $fpath for new shells to load it"
+        )
 
 
 def main() -> None:
