@@ -68,6 +68,17 @@ def test_store_different_contents_raises(cfg: Config, home: Path) -> None:
     assert file.read_text() == "local"
 
 
+def test_store_force_overwrites_stored(cfg: Config, home: Path) -> None:
+    file = make_file(home / ".bashrc", "local")
+    stored = make_file(cfg.root / ".bashrc", "stored")
+    message = core.store(cfg, file, force=True)
+    assert file.is_symlink()
+    assert stored.read_text() == "local"
+    backup = cfg.root / ".bashrc.BAK"
+    assert backup.read_text() == "stored"
+    assert "backed up" in message
+
+
 def test_store_missing_file_raises(cfg: Config, home: Path) -> None:
     with pytest.raises(DotfigError, match="does not exist"):
         core.store(cfg, home / ".nope")
@@ -97,8 +108,15 @@ def test_store_broken_link_raises(cfg: Config, home: Path) -> None:
 
 def test_store_file_inside_root_raises(cfg: Config, home: Path) -> None:
     file = make_file(cfg.root / "nested" / "file")
-    with pytest.raises(DotfigError, match="inside the dotfig root"):
-        core.store(cfg, file)
+    with pytest.raises(DotfigError, match="inside the dotfig root") as excinfo:
+        core.store(cfg, file, home=home)
+    assert str(home / "nested" / "file") in str(excinfo.value)
+
+
+def test_store_root_dir_raises(cfg: Config, home: Path) -> None:
+    with pytest.raises(DotfigError, match="root dir") as excinfo:
+        core.store(cfg, cfg.root, home=home)
+    assert str(home) in str(excinfo.value)
 
 
 def test_resolve_stored_relative_to_root(cfg: Config) -> None:
@@ -229,6 +247,39 @@ def test_diff_identical_files_is_empty(tmp_path: Path) -> None:
     stored = make_file(tmp_path / "stored", "same\n")
     dest = make_file(tmp_path / "dest", "same\n")
     assert not core.diff(stored, dest)
+
+
+def test_side_by_side_aligns_replaced_lines(tmp_path: Path) -> None:
+    stored = make_file(tmp_path / "stored", "a\nnew\nc\n")
+    dest = make_file(tmp_path / "dest", "a\nold\nc\n")
+    rows = core.side_by_side(stored, dest)
+    assert [(row.dest, row.stored, row.changed) for row in rows] == [
+        ("a", "a", False),
+        ("old", "new", True),
+        ("c", "c", False),
+    ]
+
+
+def test_side_by_side_marks_deleted_lines(tmp_path: Path) -> None:
+    stored = make_file(tmp_path / "stored", "a\nc\n")
+    dest = make_file(tmp_path / "dest", "a\nb\nc\n")
+    rows = core.side_by_side(stored, dest)
+    assert [(row.dest, row.stored, row.changed) for row in rows] == [
+        ("a", "a", False),
+        ("b", None, True),
+        ("c", "c", False),
+    ]
+
+
+def test_side_by_side_marks_inserted_lines(tmp_path: Path) -> None:
+    stored = make_file(tmp_path / "stored", "a\nb\nc\n")
+    dest = make_file(tmp_path / "dest", "a\nc\n")
+    rows = core.side_by_side(stored, dest)
+    assert [(row.dest, row.stored, row.changed) for row in rows] == [
+        ("a", "a", False),
+        (None, "b", True),
+        ("c", "c", False),
+    ]
 
 
 def test_restore_force_overwrites_different_contents(

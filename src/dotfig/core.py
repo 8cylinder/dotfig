@@ -23,6 +23,19 @@ class Entry:
     status: str
 
 
+@dataclass(frozen=True)
+class DiffRow:
+    """One aligned row of a side-by-side diff.
+
+    Either side is ``None`` when the row exists only in the other file.
+    ``changed`` marks a row that differs between the two files.
+    """
+
+    dest: str | None
+    stored: str | None
+    changed: bool
+
+
 def absolute(path: Path) -> Path:
     """Make a path absolute without resolving symlinks.
 
@@ -71,9 +84,33 @@ def _link_target(file: Path) -> Path | None:
     return absolute(target_path)
 
 
-def _ensure_source(cfg: Config, file: Path) -> None:
-    if file == cfg.root or cfg.root in file.parents:
-        raise DotfigError(f"{file} is inside the dotfig root")
+def inside_root(cfg: Config, file: Path) -> bool:
+    """Check whether FILE is the dotfig root or lies inside it.
+
+    Returns:
+        Whether FILE is inside the dotfig root.
+
+    """
+    target = absolute(file)
+    return target == cfg.root or cfg.root in target.parents
+
+
+def _ensure_source(
+    cfg: Config, file: Path, *, home: Path | None = None
+) -> None:
+    if not inside_root(cfg, file):
+        return
+    base = _home(home)
+    if file == cfg.root:
+        raise DotfigError(
+            f"{file} is the dotfig root dir; store the config file under "
+            f"{base} instead"
+        )
+    mirror = base / file.relative_to(cfg.root)
+    raise DotfigError(
+        f"{file} is inside the dotfig root {cfg.root}; did you mean to store "
+        f"the config file at {mirror}?"
+    )
 
 
 def resolve_stored(cfg: Config, file: Path) -> Path:
@@ -137,6 +174,12 @@ def contents_equal(first: Path, second: Path) -> bool:
     return digest(first) == digest(second)
 
 
+def _read_lines(path: Path, *, keepends: bool) -> list[str]:
+    return path.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=keepends
+    )
+
+
 def diff(stored: Path, dest: Path) -> str:
     """Diff DEST against STORED.
 
@@ -145,20 +188,45 @@ def diff(stored: Path, dest: Path) -> str:
         files are identical.
 
     """
-    dest_lines = dest.read_text(encoding="utf-8", errors="replace").splitlines(
-        keepends=True
-    )
-    stored_lines = stored.read_text(
-        encoding="utf-8", errors="replace"
-    ).splitlines(keepends=True)
     return "".join(
         difflib.unified_diff(
-            dest_lines,
-            stored_lines,
+            _read_lines(dest, keepends=True),
+            _read_lines(stored, keepends=True),
             fromfile=str(dest),
             tofile=str(stored),
         )
     ).rstrip("\n")
+
+
+def side_by_side(stored: Path, dest: Path) -> list[DiffRow]:
+    """Align DEST and STORED into rows for a side-by-side diff.
+
+    Returns:
+        One row per aligned line, with ``None`` on the side that has no
+        counterpart and ``changed`` set on differing rows.
+
+    """
+    dest_lines = _read_lines(dest, keepends=False)
+    stored_lines = _read_lines(stored, keepends=False)
+    matcher = difflib.SequenceMatcher(None, dest_lines, stored_lines)
+    rows: list[DiffRow] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            rows.extend(
+                DiffRow(line, line, changed=False) for line in dest_lines[i1:i2]
+            )
+            continue
+        left = dest_lines[i1:i2]
+        right = stored_lines[j1:j2]
+        rows.extend(
+            DiffRow(
+                left[index] if index < len(left) else None,
+                right[index] if index < len(right) else None,
+                changed=True,
+            )
+            for index in range(max(len(left), len(right)))
+        )
+    return rows
 
 
 def _link(stored: Path, source: Path) -> None:
@@ -166,7 +234,9 @@ def _link(stored: Path, source: Path) -> None:
     source.symlink_to(stored)
 
 
-def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
+def store(
+    cfg: Config, file: Path, *, home: Path | None = None, force: bool = False
+) -> str:
     """Store a file by moving it into the root and linking it back.
 
     Returns:
@@ -177,7 +247,7 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
 
     """
     file = absolute(file)
-    _ensure_source(cfg, file)
+    _ensure_source(cfg, file, home=home)
     stored = stored_path(cfg, file, home=home)
 
     if file.is_symlink():
@@ -202,9 +272,16 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
             file.unlink()
             _link(stored, file)
             return f"{file} matches the stored copy; linked it"
-        raise DotfigError(
-            f"{stored} exists with different contents; refusing to overwrite it"
-        )
+        if not force:
+            raise DotfigError(
+                f"{stored} exists with different contents; "
+                "refusing to overwrite it"
+            )
+        backup = stored.with_name(f"{stored.name}.BAK")
+        stored.rename(backup)
+        shutil.move(str(file), stored)
+        _link(stored, file)
+        return f"backed up {backup} and stored {file}"
 
     stored.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(file), stored)

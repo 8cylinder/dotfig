@@ -69,7 +69,12 @@ to the stored copy.
 - If `FILE` is already a correct symlink into the root: report it and do nothing.
 - If a stored copy exists with the same contents: replace `FILE` with a symlink.
 - If a stored copy exists with different contents: error and change nothing.
-- `FILE` must be under `$HOME` and is never resolved through symlinks.
+  Pass `--force` to back the stored copy up to `<name>.BAK` and store `FILE`
+  instead. Like `restore --force`, it asks for confirmation
+  (`Continue? [y/N/(d)iff]`) and `d` prints the diff before asking again.
+- `FILE` must be under `$HOME` and is never resolved through symlinks. A path
+  inside the dotfig root is an error: it names a stored copy, and the message
+  points at the matching config file under `$HOME`.
 
 ### restore
 
@@ -95,16 +100,18 @@ and whether a symlink would be created (or why not).
 - If the destination is a regular file with identical contents: rename it to
   `<name>.BAK`, then symlink it to the stored copy.
 - If the destination is a regular file with different contents: warn and change
-  nothing. Pass `--diff` to also print a unified diff of the difference, or `--force` to back the file up to `<name>.BAK`
-  and replace it with a link to the stored copy. `--force` asks for
-  confirmation (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to
-  print the diff and be asked again.
+  nothing. Pass `--diff` to print a unified diff of the difference, or
+  `--side-by-side` to print the two files as aligned columns (`destination` and
+  `stored`). Pass `--force` to back the file up to `<name>.BAK` and replace it
+  with a link to the stored copy. `--force` asks for confirmation
+  (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to print the diff
+  (side by side when `--side-by-side` is given) and be asked again.
 - If the destination is a foreign symlink: error. If it already points at the
   root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
 
-`--diff` and `--force` combine with `--dry-run` to show what would happen
-without touching the filesystem.
+`--diff`, `--side-by-side`, and `--force` combine with `--dry-run` to show what
+would happen without touching the filesystem.
 
 ## Config file
 

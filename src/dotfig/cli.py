@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
+from rich import box
 from rich.console import Console
 from rich.markup import escape
 from rich.syntax import Syntax
@@ -92,11 +93,20 @@ def list_command() -> None:
 
 @cli.command()
 @click.argument("file", type=click.Path(path_type=Path))
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite a differing stored copy with FILE.",
+)
 @_handle_errors
-def store(file: Path) -> None:
+def store(file: Path, *, force: bool) -> None:
     """Store FILE under the dotfig root and link it back."""
     cfg = Config.load()
-    console.print(core.store(cfg, file))
+    if force and not core.inside_root(cfg, file):
+        stored = core.stored_path(cfg, file)
+        if _store_conflicts(stored, file):
+            _confirm_overwrite(target=file, current=stored)
+    console.print(core.store(cfg, file, force=force))
 
 
 @cli.command()
@@ -114,18 +124,35 @@ def store(file: Path) -> None:
     help="Show a diff when the destination differs from the stored copy.",
 )
 @click.option(
+    "--side-by-side",
+    "side_by_side",
+    is_flag=True,
+    help="Show the diff as two columns: destination and stored.",
+)
+@click.option(
     "--force",
     is_flag=True,
     help="Overwrite a differing destination with the stored copy.",
 )
 @_handle_errors
-def restore(file: Path, *, dry_run: bool, show_diff: bool, force: bool) -> None:
+def restore(
+    file: Path,
+    *,
+    dry_run: bool,
+    show_diff: bool,
+    side_by_side: bool,
+    force: bool,
+) -> None:
     """Restore FILE from the dotfig root."""
     cfg = Config.load()
-    if show_diff:
-        _show_diff(cfg, file)
+    if show_diff or side_by_side:
+        _show_diff(cfg, file, side_by_side=side_by_side)
     if force and not dry_run:
-        _confirm_overwrite(cfg, file)
+        stored, dest = core.restore_paths(cfg, file)
+        if _differs(stored, dest):
+            _confirm_overwrite(
+                target=stored, current=dest, side_by_side=side_by_side
+            )
     console.print(core.restore(cfg, file, dry_run=dry_run, force=force))
 
 
@@ -138,22 +165,59 @@ def _differs(stored: Path, dest: Path) -> bool:
     )
 
 
-def _show_diff(cfg: Config, file: Path) -> None:
+def _store_conflicts(stored: Path, file: Path) -> bool:
+    return (
+        stored.is_file()
+        and file.is_file()
+        and not core.contents_equal(stored, file)
+    )
+
+
+def _show_diff(cfg: Config, file: Path, *, side_by_side: bool) -> None:
     stored, dest = core.restore_paths(cfg, file)
     if _differs(stored, dest):
+        _print_diff(stored, dest, side_by_side=side_by_side)
+
+
+def _print_diff(target: Path, current: Path, *, side_by_side: bool) -> None:
+    if side_by_side:
+        _print_side_by_side(target, current)
+    else:
         console.print(
-            Syntax(core.diff(stored, dest), "diff", theme="ansi_dark")
+            Syntax(core.diff(target, current), "diff", theme="ansi_dark")
         )
 
 
-def _confirm_overwrite(cfg: Config, file: Path) -> None:
-    stored, dest = core.restore_paths(cfg, file)
-    if not _differs(stored, dest):
-        return
+def _print_side_by_side(target: Path, current: Path) -> None:
+    table = Table(
+        "destination",
+        "stored",
+        show_header=True,
+        box=box.MINIMAL,
+        pad_edge=False,
+    )
+    for column in table.columns:
+        column.no_wrap = True
+        column.overflow = "ellipsis"
+    for row in core.side_by_side(target, current):
+        left = escape(row.dest) if row.dest is not None else ""
+        right = escape(row.stored) if row.stored is not None else ""
+        if row.changed:
+            if row.dest is not None:
+                left = f"[red]{left}[/red]"
+            if row.stored is not None:
+                right = f"[green]{right}[/green]"
+        table.add_row(left, right)
+    console.print(table)
+
+
+def _confirm_overwrite(
+    *, target: Path, current: Path, side_by_side: bool = False
+) -> None:
     while True:
         answer = str(
             click.prompt(
-                f"This will overwrite {dest} with {stored}. Continue?",
+                f"This will overwrite {current} with {target}. Continue?",
                 prompt_suffix=" [y/N/(d)iff]: ",
                 default="n",
                 show_default=False,
@@ -162,9 +226,7 @@ def _confirm_overwrite(cfg: Config, file: Path) -> None:
             )
         ).lower()
         if answer == "d":
-            console.print(
-                Syntax(core.diff(stored, dest), "diff", theme="ansi_dark")
-            )
+            _print_diff(target, current, side_by_side=side_by_side)
             continue
         if answer == "y":
             return

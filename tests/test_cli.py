@@ -67,6 +67,64 @@ def test_store_conflict_exits_nonzero(home: Path) -> None:
     assert config.read_text() == "local"
 
 
+def test_store_force_overwrites_stored(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+
+    result = run(["store", "--force", str(config)], "y\n")
+    assert result.exit_code == 0, output(result)
+    assert "This will overwrite" in output(result)
+    assert "Continue? [y/N/(d)iff]" in output(result)
+    assert config.is_symlink()
+    assert stored.read_text() == "local\n"
+    assert (root / ".bashrc.BAK").read_text() == "stored\n"
+
+
+def test_store_force_prompt_shows_diff_then_aborts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+
+    result = run(["store", "--force", str(config)], "d\nn\n")
+    assert result.exit_code != 0
+    text = output(result)
+    assert "-stored" in text
+    assert "+local" in text
+    assert config.read_text() == "local\n"
+    assert not config.is_symlink()
+    assert stored.read_text() == "stored\n"
+    assert not (root / ".bashrc.BAK").exists()
+
+
+def test_store_path_inside_root_suggests_config_file(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".config" / "cm" / ".env"
+    config.parent.mkdir(parents=True)
+    config.write_text("stored\n")
+    assert run(["store", str(config)]).exit_code == 0
+
+    config.unlink()
+    config.write_text("local\n")
+    stored = root / ".config" / "cm" / ".env"
+
+    result = run(["store", str(stored), "--force"], "y\n")
+    assert result.exit_code != 0
+    text = output(result)
+    assert "inside the dotfig root" in text
+    assert str(config) in text
+    assert "Continue?" not in text
+    assert config.read_text() == "local\n"
+    assert stored.read_text() == "stored\n"
+
+
 def test_restore_conflict_exits_nonzero(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
@@ -138,6 +196,39 @@ def test_restore_force_diff_shows_diff(home: Path) -> None:
     text = output(result)
     assert "-local" in text
     assert "+stored" in text
+    assert config.is_symlink()
+    assert config.read_text() == "stored\n"
+
+
+def test_restore_side_by_side_shows_columns(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--side-by-side", ".bashrc"])
+    assert result.exit_code != 0
+    text = output(result)
+    assert "destination" in text
+    assert "stored" in text
+    assert "local" in text
+    assert config.read_text() == "local\n"
+
+
+def test_restore_force_side_by_side_prompt_diff(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["restore", "--force", "--side-by-side", ".bashrc"], "d\ny\n")
+    assert result.exit_code == 0, output(result)
+    text = output(result)
+    assert "destination" in text
+    assert "stored" in text
+    assert "local" in text
     assert config.is_symlink()
     assert config.read_text() == "stored\n"
 
