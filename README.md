@@ -28,9 +28,10 @@ dotfig install-completions bash      # or name it explicitly
 
 This writes a completion script to the standard per-user location
 (`~/.local/share/bash-completion/completions/dotfig` for bash,
-`~/.config/fish/completions/dotfig.fish` for fish, etc.), so no shell config
-edit is needed. To enable completion for just the current session instead, use
-Click's built-in mechanism:
+`~/.config/fish/completions/dotfig.fish` for fish, etc.) and prints a `source`
+command that enables it in the current shell. New bash/fish shells load it
+automatically; for zsh, make sure the target directory is on `$fpath`. For a
+one-off without writing a file, use Click's built-in mechanism:
 
 ```sh
 eval "$(_DOTFIG_COMPLETE=bash_source dotfig)"
@@ -136,6 +137,18 @@ and whether a symlink would be created (or why not).
 `--diff`, `--side-by-side`, and `--force` combine with `--dry-run` to show what
 would happen without touching the filesystem.
 
+### install-completions
+
+```sh
+dotfig install-completions [SHELL]
+```
+
+Write a shell completion script for `SHELL` (`bash`, `zsh`, `fish`, or
+`powershell`), defaulting to the shell named by `$SHELL` (falling back to
+`bash`). The script is written to the standard per-user location and the command
+prints a `source` line to enable it in the current shell; new shells load it
+automatically (for zsh, ensure the target directory is on `$fpath`). No `sudo`
+is needed.
 ## Config file
 
 `$HOME/.dotfig` stores the root location in TOML, without the `.toml`
@@ -165,4 +178,5 @@ Layout:
 - `src/dotfig/cli.py` -- click + rich commands
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
 - `src/dotfig/config.py` -- `$HOME/.dotfig` load/save
+- `src/dotfig/diffview.py` -- interactive diff viewer built on textual-diff-view
 - `tests/` -- pytest suite
