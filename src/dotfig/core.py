@@ -75,6 +75,27 @@ def _ensure_source(cfg: Config, file: Path) -> None:
         raise DotfigError(f"{file} is inside the dotfig root")
 
 
+def resolve_stored(cfg: Config, file: Path) -> Path:
+    """Resolve a restore argument to a path inside the dotfig root.
+
+    FILE is treated as relative to the dotfig root unless it is already an
+    absolute path, in which case it must itself be inside the root.
+
+    Returns:
+        The absolute path of the stored file.
+
+    Raises:
+        DotfigError: If FILE resolves to a path outside the dotfig root.
+
+    """
+    expanded = Path(os.path.expandvars(str(file))).expanduser()
+    candidate = expanded if expanded.is_absolute() else cfg.root / expanded
+    stored = absolute(candidate)
+    if stored != cfg.root and cfg.root not in stored.parents:
+        raise DotfigError(f"{file} is not inside the dotfig root {cfg.root}")
+    return stored
+
+
 def digest(path: Path) -> bytes:
     """Hash a file with SHA-256.
 
@@ -152,42 +173,93 @@ def store(cfg: Config, file: Path, *, home: Path | None = None) -> str:
     return f"stored {file}"
 
 
-def restore(cfg: Config, file: Path, *, home: Path | None = None) -> str:
-    """Restore a file from the dotfig root by linking it back.
+def _dry_run_report(stored: Path, dest: Path) -> str:
+    """Describe what restore would do, without changing anything.
 
     Returns:
-        A message describing what was done.
-
-    Raises:
-        DotfigError: If the stored copy is missing or the file conflicts.
+        A report of the destination state and the planned action.
 
     """
-    file = absolute(file)
-    _ensure_source(cfg, file)
-    stored = stored_path(cfg, file, home=home)
+    exists = dest.is_symlink() or dest.exists()
+    if dest.is_symlink():
+        target = _link_target(dest)
+        if target == stored:
+            same = "yes"
+            action = f"no (already linked to {stored})"
+        else:
+            same = "no"
+            action = f"no (points to {target}, not the dotfig root)"
+    elif dest.is_dir():
+        same = "no"
+        action = "no (destination is a directory)"
+    elif dest.is_file():
+        if contents_equal(dest, stored):
+            same = "yes"
+            backup = dest.with_name(f"{dest.name}.BAK")
+            action = f"yes (back up to {backup}, then link to {stored})"
+        else:
+            same = "no"
+            action = "no (contents differ from stored)"
+    else:
+        same = "n/a"
+        action = f"yes (link to {stored})"
+    return "\n".join(
+        [
+            f"destination: {dest}",
+            f"exists: {'yes' if exists else 'no'}",
+            f"same: {same}",
+            f"would symlink: {action}",
+        ]
+    )
+
+
+def restore(
+    cfg: Config, file: Path, *, home: Path | None = None, dry_run: bool = False
+) -> str:
+    """Restore a stored file by linking it back into $HOME.
+
+    FILE names a file inside the dotfig root, relative to the root or as an
+    absolute path under it. The mirrored path under $HOME is recreated.
+
+    Returns:
+        A message describing what was done, or a report of what would be done
+        when DRY_RUN is set.
+
+    Raises:
+        DotfigError: If the stored copy is missing or the destination conflicts.
+
+    """
+    stored = resolve_stored(cfg, file)
+    dest = _home(home) / stored.relative_to(cfg.root)
 
     if not stored.is_file():
         raise DotfigError(f"no stored copy at {stored}; nothing to restore")
 
-    if file.is_symlink():
-        target = _link_target(file)
+    if dry_run:
+        return _dry_run_report(stored, dest)
+
+    if dest.is_symlink():
+        target = _link_target(dest)
         if target != stored:
             raise DotfigError(
-                f"{file} is a symlink to {target}, not to the dotfig root"
+                f"{dest} is a symlink to {target}, not to the dotfig root"
             )
-        return f"{file} is already restored"
+        return f"{dest} is already restored"
 
-    if file.exists():
-        if not file.is_file():
-            raise DotfigError(f"{file} is a directory; refusing to replace it")
-        if not contents_equal(file, stored):
+    if dest.exists():
+        if not dest.is_file():
+            raise DotfigError(f"{dest} is a directory; refusing to replace it")
+        if not contents_equal(dest, stored):
             raise DotfigError(
-                f"{file} differs from {stored}; refusing to overwrite it"
+                f"{dest} differs from {stored}; refusing to overwrite it"
             )
-        file.unlink()
+        backup = dest.with_name(f"{dest.name}.BAK")
+        dest.rename(backup)
+        _link(stored, dest)
+        return f"backed up {backup} and restored {dest}"
 
-    _link(stored, file)
-    return f"restored {file}"
+    _link(stored, dest)
+    return f"restored {dest}"
 
 
 def _source_status(source: Path, stored: Path) -> str:
@@ -199,6 +271,16 @@ def _source_status(source: Path, stored: Path) -> str:
     if source.exists():
         return "not linked"
     return "missing"
+
+
+def display_path(anchor: Path, path: Path) -> str:
+    """Render a path below an anchor directory, keeping the anchor's name.
+
+    Returns:
+        PATH relative to ANCHOR, prefixed with ANCHOR's directory name.
+
+    """
+    return str(Path(anchor.name) / path.relative_to(anchor))
 
 
 def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:

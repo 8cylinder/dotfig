@@ -101,48 +101,120 @@ def test_store_file_inside_root_raises(cfg: Config, home: Path) -> None:
         core.store(cfg, file)
 
 
+def test_resolve_stored_relative_to_root(cfg: Config) -> None:
+    assert core.resolve_stored(cfg, Path(".config") / "app" / "conf") == (
+        cfg.root / ".config" / "app" / "conf"
+    )
+
+
+def test_resolve_stored_absolute_inside_root(cfg: Config) -> None:
+    stored = cfg.root / ".bashrc"
+    assert core.resolve_stored(cfg, stored) == stored
+
+
+def test_resolve_stored_outside_root_raises(cfg: Config) -> None:
+    with pytest.raises(DotfigError, match="inside the dotfig root"):
+        core.resolve_stored(cfg, Path("..") / "escape")
+
+
 def test_restore_missing_source_creates_link(cfg: Config, home: Path) -> None:
     make_file(cfg.root / ".config" / "app" / "conf", "data")
+    core.restore(cfg, Path(".config") / "app" / "conf")
     file = home / ".config" / "app" / "conf"
-    core.restore(cfg, file)
     assert file.is_symlink()
     assert file.read_text() == "data"
 
 
-def test_restore_regular_file_same_becomes_link(
+def test_restore_regular_file_same_is_backed_up(
     cfg: Config, home: Path
 ) -> None:
-    file = make_file(home / ".bashrc", "same")
     make_file(cfg.root / ".bashrc", "same")
-    core.restore(cfg, file)
+    file = make_file(home / ".bashrc", "same")
+    core.restore(cfg, Path(".bashrc"))
     assert file.is_symlink()
+    assert file.read_text() == "same"
+    backup = home / ".bashrc.BAK"
+    assert backup.read_text() == "same"
+    assert not backup.is_symlink()
 
 
 def test_restore_different_contents_raises(cfg: Config, home: Path) -> None:
-    file = make_file(home / ".bashrc", "local")
     make_file(cfg.root / ".bashrc", "stored")
+    file = make_file(home / ".bashrc", "local")
     with pytest.raises(DotfigError, match="differs"):
-        core.restore(cfg, file)
+        core.restore(cfg, Path(".bashrc"))
     assert file.read_text() == "local"
+    assert not file.is_symlink()
 
 
 def test_restore_already_linked_is_noop(cfg: Config, home: Path) -> None:
     file = make_file(home / ".bashrc")
     core.store(cfg, file)
-    assert core.restore(cfg, file) == f"{file} is already restored"
+    assert core.restore(cfg, Path(".bashrc")) == f"{file} is already restored"
 
 
-def test_restore_without_stored_copy_raises(cfg: Config, home: Path) -> None:
+def test_restore_without_stored_copy_raises(cfg: Config) -> None:
     with pytest.raises(DotfigError, match="nothing to restore"):
-        core.restore(cfg, home / ".bashrc")
+        core.restore(cfg, Path(".bashrc"))
 
 
 def test_restore_foreign_symlink_raises(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".bashrc", "stored")
     target = make_file(home / "elsewhere")
     file = home / ".bashrc"
     file.symlink_to(target)
     with pytest.raises(DotfigError, match="symlink"):
-        core.restore(cfg, file)
+        core.restore(cfg, Path(".bashrc"))
+
+
+def test_restore_directory_destination_raises(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".config", "stored")
+    (home / ".config").mkdir()
+    with pytest.raises(DotfigError, match="directory"):
+        core.restore(cfg, Path(".config"))
+
+
+def test_restore_dry_run_missing_destination(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".config" / "app" / "conf", "data")
+    report = core.restore(cfg, Path(".config") / "app" / "conf", dry_run=True)
+    assert "exists: no" in report
+    assert "same: n/a" in report
+    assert "would symlink: yes" in report
+    assert not (home / ".config").exists()
+
+
+def test_restore_dry_run_same_contents(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".bashrc", "same")
+    file = make_file(home / ".bashrc", "same")
+    report = core.restore(cfg, Path(".bashrc"), dry_run=True)
+    assert "exists: yes" in report
+    assert "same: yes" in report
+    assert "would symlink: yes" in report
+    assert "back up" in report
+    assert file.read_text() == "same"
+    assert not file.is_symlink()
+    assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_dry_run_different_contents(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".bashrc", "stored")
+    file = make_file(home / ".bashrc", "local")
+    report = core.restore(cfg, Path(".bashrc"), dry_run=True)
+    assert "exists: yes" in report
+    assert "same: no" in report
+    assert "would symlink: no" in report
+    assert file.read_text() == "local"
+    assert not file.is_symlink()
+
+
+def test_restore_dry_run_already_linked(cfg: Config, home: Path) -> None:
+    file = make_file(home / ".bashrc")
+    core.store(cfg, file)
+    report = core.restore(cfg, Path(".bashrc"), dry_run=True)
+    assert "exists: yes" in report
+    assert "same: yes" in report
+    assert "would symlink: no" in report
+    assert "already linked" in report
 
 
 def test_list_managed_skips_git_and_reports_status(
@@ -168,6 +240,15 @@ def test_list_managed_wrong_link(cfg: Config, home: Path) -> None:
     file.symlink_to(home / "other")
     (entry,) = core.list_managed(cfg)
     assert entry.status.startswith("wrong link")
+
+
+def test_display_path_keeps_anchor_name(cfg: Config, home: Path) -> None:
+    stored = cfg.root / ".config" / "app" / "conf"
+    assert core.display_path(cfg.root, stored) == (
+        f"{cfg.root.name}/.config/app/conf"
+    )
+    source = home / ".config" / "app" / "conf"
+    assert core.display_path(home, source) == (f"{home.name}/.config/app/conf")
 
 
 def test_list_managed_missing_root_raises(home: Path) -> None:

@@ -72,7 +72,8 @@ def list_command() -> None:
     if not entries:
         console.print("no stored config files")
         return
-    table = Table("source", "status")
+    home = Path.home()
+    table = Table("source", "destination", "status")
     for entry in entries:
         if entry.status == "linked":
             color = "green"
@@ -81,7 +82,9 @@ def list_command() -> None:
         else:
             color = "yellow"
         table.add_row(
-            escape(str(entry.source)), f"[{color}]{escape(entry.status)}[/]"
+            escape(core.display_path(cfg.root, entry.stored)),
+            escape(core.display_path(home, entry.source)),
+            f"[{color}]{escape(entry.status)}[/]",
         )
     console.print(table)
 
@@ -97,11 +100,17 @@ def store(file: Path) -> None:
 
 @cli.command()
 @click.argument("file", type=click.Path(path_type=Path))
+@click.option(
+    "-d",
+    "--dry-run",
+    is_flag=True,
+    help="Show what would happen without changing anything.",
+)
 @_handle_errors
-def restore(file: Path) -> None:
+def restore(file: Path, *, dry_run: bool) -> None:
     """Restore FILE from the dotfig root."""
     cfg = Config.load()
-    console.print(core.restore(cfg, file))
+    console.print(core.restore(cfg, file, dry_run=dry_run))
 
 
 def main() -> None:

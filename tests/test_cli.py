@@ -50,7 +50,7 @@ def test_store_list_restore_flow(home: Path) -> None:
     assert "linked" in output(listed)
 
     config.unlink()
-    restored = run(["restore", str(config)])
+    restored = run(["restore", ".bashrc"])
     assert restored.exit_code == 0, output(restored)
     assert config.is_symlink()
 
@@ -67,6 +67,35 @@ def test_store_conflict_exits_nonzero(home: Path) -> None:
     assert config.read_text() == "local"
 
 
+def test_restore_conflict_exits_nonzero(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored")
+    config = home / ".bashrc"
+    config.write_text("local")
+    result = run(["restore", ".bashrc"])
+    assert result.exit_code != 0
+    assert "differs" in output(result)
+    assert config.read_text() == "local"
+    assert not config.is_symlink()
+
+
+def test_restore_dry_run_makes_no_changes(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored")
+
+    result = run(["restore", "--dry-run", ".bashrc"])
+    assert result.exit_code == 0, output(result)
+    assert "would symlink: yes" in output(result)
+    assert not (home / ".bashrc").exists()
+
+    short = run(["restore", "-d", ".bashrc"])
+    assert short.exit_code == 0, output(short)
+    assert "would symlink: yes" in output(short)
+    assert not (home / ".bashrc").exists()
+
+
 def test_list_without_init_fails(home: Path) -> None:
     result = run(["list"])
     assert result.exit_code != 0
@@ -78,3 +107,20 @@ def test_list_empty_root(home: Path) -> None:
     result = run(["list"])
     assert result.exit_code == 0, output(result)
     assert "no stored config files" in output(result)
+
+
+def test_list_shows_source_and_destination(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("export X=1")
+    assert run(["store", str(config)]).exit_code == 0
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    text = output(listed)
+    assert "source" in text
+    assert "destination" in text
+    assert "tree/.bashrc" in text
+    assert f"{home.name}/.bashrc" in text
+    assert "linked" in text

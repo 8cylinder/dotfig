@@ -51,9 +51,11 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with its source path and link status: `linked`,
-`not linked`, `missing`, or `wrong link -> <target>`. The `.git` directory is
-skipped so the root can itself be a git repo.
+List every stored file with three columns: `source` (the stored path in the
+root, prefixed with the root directory's name), `destination` (the mirrored
+path under `$HOME`, prefixed with the home directory's name), and the link
+status: `linked`, `not linked`, `missing`, or `wrong link -> <target>`. The
+`.git` directory is skipped so the root can itself be a git repo.
 
 ### store
 
@@ -75,12 +77,27 @@ to the stored copy.
 dotfig restore FILE
 ```
 
-Recreate the symlink for `FILE` from the stored copy.
+Recreate a stored file's symlink in `$HOME`. `FILE` names a file inside the
+dotfig root, either relative to the root or as an absolute path under it. The
+mirrored path under `$HOME` is the destination, and its parent directories are
+created if needed.
 
-- If `FILE` is missing: create parent dirs and symlink it to the stored copy.
-- If `FILE` is a regular file with identical contents: replace it with a symlink.
-- If `FILE` is a regular file with different contents: error and change nothing.
-- If `FILE` is a foreign symlink: error. If it already points at the root: no-op.
+```sh
+dotfig restore .config/path/to/config.json
+```
+
+Pass `-d` / `--dry-run` to inspect without touching the filesystem. It prints
+the destination path, whether it exists, whether it matches the stored copy,
+and whether a symlink would be created (or why not).
+
+- If the destination is missing: create parent dirs and symlink it to the
+  stored copy.
+- If the destination is a regular file with identical contents: rename it to
+  `<name>.BAK`, then symlink it to the stored copy.
+- If the destination is a regular file with different contents: warn and change
+  nothing.
+- If the destination is a foreign symlink: error. If it already points at the
+  root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
 
 ## Config file
