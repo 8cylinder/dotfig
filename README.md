@@ -55,7 +55,8 @@ List every stored file with three columns: `source` (the stored path in the
 root), `destination` (the mirrored path under `$HOME`), and the link status:
 `linked`, `not linked`, `missing`, or `wrong link -> <target>`. Paths under
 `$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
-`.git` directory is skipped so the root can itself be a git repo.
+shared trailing path components appear in cyan in both columns. The `.git`
+directory is skipped so the root can itself be a git repo.
 
 ### store
 
@@ -71,7 +72,7 @@ to the stored copy.
 - If a stored copy exists with different contents: error and change nothing.
   Pass `--force` to back the stored copy up to `<name>.BAK` and store `FILE`
   instead. Like `restore --force`, it asks for confirmation
-  (`Continue? [y/N/(d)iff]`) and `d` prints the diff before asking again.
+  (`Continue? [y/N/(d)iff]`) and `d` opens the diff viewer before asking again.
 - `FILE` must be under `$HOME` and is never resolved through symlinks. A path
   inside the dotfig root is an error: it names a stored copy, and the message
   points at the matching config file under `$HOME`.
@@ -100,14 +101,18 @@ and whether a symlink would be created (or why not).
 - If the destination is a regular file with identical contents: rename it to
   `<name>.BAK`, then symlink it to the stored copy.
 - If the destination is a regular file with different contents: warn and change
-  nothing. Pass `--diff` to print a unified diff of the difference, or
-  `--side-by-side` to print the two files as aligned columns (`destination` and
-  `stored`). Pass `--force` to back the file up to `<name>.BAK` and replace it
-  with a link to the stored copy. `--force` asks for confirmation
-  (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to print the diff
-  (side by side when `--side-by-side` is given) and be asked again.
-- If the destination is a foreign symlink: error. If it already points at the
-  root: no-op.
+  nothing. Pass `--diff` to open the difference in the interactive
+  [textual-diff-view](https://github.com/batrachianai/textual-diff-view) viewer,
+  or `--side-by-side` to open it in split (two-column) mode. Pass `--force` to
+  back the file up to `<name>.BAK` and replace it with a link to the stored
+  copy. `--force` asks for confirmation (`Continue? [y/N/(d)iff]`) before
+  overwriting; answer `d` to open the diff viewer (split mode when
+  `--side-by-side` is given) and be asked again. In the viewer, `space` toggles
+  split/unified, `a` toggles annotations, and `q` quits. When output is not a
+  terminal, a plain inline diff is printed instead.
+- If the destination is a foreign symlink: error. Pass `--force` to back the
+  link up to `<name>.BAK` and replace it with a link to the stored copy (with
+  the same confirmation prompt). If it already points at the root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
 
 `--diff`, `--side-by-side`, and `--force` combine with `--dry-run` to show what

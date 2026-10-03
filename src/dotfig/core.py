@@ -174,6 +174,23 @@ def contents_equal(first: Path, second: Path) -> bool:
     return digest(first) == digest(second)
 
 
+def restore_conflict(stored: Path, dest: Path) -> bool:
+    """Check whether restoring over DEST would replace a conflicting file.
+
+    A conflict is a regular file whose contents differ from STORED, or a
+    symlink that does not point at STORED.
+
+    Returns:
+        Whether DEST conflicts with STORED.
+
+    """
+    if dest.is_symlink():
+        return _link_target(dest) != stored
+    if dest.is_file():
+        return not contents_equal(dest, stored)
+    return False
+
+
 def _read_lines(path: Path, *, keepends: bool) -> list[str]:
     return path.read_text(encoding="utf-8", errors="replace").splitlines(
         keepends=keepends
@@ -302,6 +319,10 @@ def _dry_run_report(stored: Path, dest: Path, *, force: bool = False) -> str:
         if target == stored:
             same = "yes"
             action = f"no (already linked to {stored})"
+        elif force:
+            same = "no"
+            backup = dest.with_name(f"{dest.name}.BAK")
+            action = f"yes (back up to {backup}, then link to {stored})"
         else:
             same = "no"
             action = f"no (points to {target}, not the dotfig root)"
@@ -365,9 +386,14 @@ def restore(
     if dest.is_symlink():
         target = _link_target(dest)
         if target != stored:
-            raise DotfigError(
-                f"{dest} is a symlink to {target}, not to the dotfig root"
-            )
+            if not force:
+                raise DotfigError(
+                    f"{dest} is a symlink to {target}, not to the dotfig root"
+                )
+            backup = dest.with_name(f"{dest.name}.BAK")
+            dest.rename(backup)
+            _link(stored, dest)
+            return f"backed up {backup} and restored {dest}"
         return f"{dest} is already restored"
 
     if dest.exists():

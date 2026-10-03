@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from click.testing import CliRunner, Result
 
-from dotfig.cli import cli
+from dotfig.cli import _color_common, _print_diff, cli
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def run(args: list[str], input_text: str | None = None) -> Result:
@@ -13,6 +18,41 @@ def run(args: list[str], input_text: str | None = None) -> Result:
 
 def output(result: Result) -> str:
     return result.output + result.stderr
+
+
+def test_color_common_marks_trailing_shared_path() -> None:
+    common = ".config/cm/.env"
+    assert _color_common("~/bin/dotfig/.config/cm/.env", common) == (
+        "~/bin/dotfig/[cyan].config/cm/.env[/cyan]"
+    )
+    assert _color_common("~/.config/cm/.env", common) == (
+        "~/[cyan].config/cm/.env[/cyan]"
+    )
+
+
+def test_color_common_leaves_other_paths_alone() -> None:
+    assert _color_common("~/.bashrc", ".config") == "~/.bashrc"
+
+
+def test_print_diff_uses_tui_when_interactive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[Path, Path, bool]] = []
+
+    def fake_show_diff(original: Path, modified: Path, *, split: bool) -> None:
+        calls.append((original, modified, split))
+
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_can_use_tui", lambda: True)
+    monkeypatch.setattr(module, "show_diff", fake_show_diff)
+    target = tmp_path / "target"
+    current = tmp_path / "current"
+    target.write_text("new\n")
+    current.write_text("old\n")
+
+    _print_diff(target, current, side_by_side=True)
+
+    assert calls == [(current, target, True)]
 
 
 def test_init_creates_root_and_config(home: Path) -> None:
@@ -198,6 +238,43 @@ def test_restore_force_diff_shows_diff(home: Path) -> None:
     assert "+stored" in text
     assert config.is_symlink()
     assert config.read_text() == "stored\n"
+
+
+def test_restore_force_foreign_symlink_prompts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    foreign = home / "elsewhere"
+    foreign.write_text("foreign\n")
+    config = home / ".bashrc"
+    config.symlink_to(foreign)
+
+    result = run(["restore", "--force", ".bashrc"], "y\n")
+    assert result.exit_code == 0, output(result)
+    assert "This will overwrite" in output(result)
+    assert config.is_symlink()
+    assert config.read_text() == "stored\n"
+    assert (home / ".bashrc.BAK").is_symlink()
+
+
+def test_restore_force_foreign_symlink_diff_then_aborts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    foreign = home / "elsewhere"
+    foreign.write_text("foreign\n")
+    config = home / ".bashrc"
+    config.symlink_to(foreign)
+
+    result = run(["restore", "--force", ".bashrc"], "d\nn\n")
+    assert result.exit_code != 0
+    text = output(result)
+    assert "-foreign" in text
+    assert "+stored" in text
+    assert config.is_symlink()
+    assert config.read_text() == "foreign\n"
+    assert not (home / ".bashrc.BAK").exists()
 
 
 def test_restore_side_by_side_shows_columns(home: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ from rich.table import Table
 
 from . import core
 from .config import Config, DotfigError, config_path
+from .diffview import show_diff
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,6 +67,19 @@ def init(path: Path, *, force: bool) -> None:
     console.print(f"wrote {cfg_path}")
 
 
+def _color_common(path: str, common: str) -> str:
+    """Escape PATH, rendering its trailing COMMON part in cyan.
+
+    Returns:
+        Rich markup for PATH with the shared suffix highlighted.
+
+    """
+    if not common or not path.endswith(common):
+        return escape(path)
+    prefix = path[: len(path) - len(common)]
+    return f"{escape(prefix)}[cyan]{escape(common)}[/cyan]"
+
+
 @cli.command(name="list")
 @_handle_errors
 def list_command() -> None:
@@ -83,9 +98,10 @@ def list_command() -> None:
             color = "red"
         else:
             color = "yellow"
+        common = str(entry.stored.relative_to(cfg.root))
         table.add_row(
-            escape(core.display_path(home, entry.stored)),
-            escape(core.display_path(home, entry.source)),
+            _color_common(core.display_path(home, entry.stored), common),
+            _color_common(core.display_path(home, entry.source), common),
             f"[{color}]{escape(entry.status)}[/]",
         )
     console.print(table)
@@ -149,20 +165,11 @@ def restore(
         _show_diff(cfg, file, side_by_side=side_by_side)
     if force and not dry_run:
         stored, dest = core.restore_paths(cfg, file)
-        if _differs(stored, dest):
+        if stored.is_file() and core.restore_conflict(stored, dest):
             _confirm_overwrite(
                 target=stored, current=dest, side_by_side=side_by_side
             )
     console.print(core.restore(cfg, file, dry_run=dry_run, force=force))
-
-
-def _differs(stored: Path, dest: Path) -> bool:
-    return (
-        stored.is_file()
-        and dest.is_file()
-        and not dest.is_symlink()
-        and not core.contents_equal(dest, stored)
-    )
 
 
 def _store_conflicts(stored: Path, file: Path) -> bool:
@@ -175,12 +182,21 @@ def _store_conflicts(stored: Path, file: Path) -> bool:
 
 def _show_diff(cfg: Config, file: Path, *, side_by_side: bool) -> None:
     stored, dest = core.restore_paths(cfg, file)
-    if _differs(stored, dest):
+    if stored.is_file() and core.restore_conflict(stored, dest):
         _print_diff(stored, dest, side_by_side=side_by_side)
 
 
+def _can_use_tui() -> bool:
+    return all((sys.stdin.isatty(), sys.stdout.isatty()))
+
+
 def _print_diff(target: Path, current: Path, *, side_by_side: bool) -> None:
-    if side_by_side:
+    if not (target.is_file() and current.is_file()):
+        console.print(f"cannot diff {current}; it is not a readable file")
+        return
+    if _can_use_tui():
+        show_diff(current, target, split=side_by_side)
+    elif side_by_side:
         _print_side_by_side(target, current)
     else:
         console.print(

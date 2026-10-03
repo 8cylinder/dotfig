@@ -11,6 +11,7 @@ dependencies = [
     "click>=8.5.0",
     "rich>=15.0.0",
     "ruff>=0.16.8",
+    "textual-diff-view==0.1.5",
     "ty>=0.0.83",
 ]
 
@@ -77,6 +78,7 @@ extend-ignore = [
     "implicit-namespace-package",     # tests is not a package
     "unused-function-argument",       # fixtures may be requested for side effects only
     "typing-only-standard-library-import",  # imports used only in annotations
+    "import-private-name",            # tests exercise private helpers
 ]
 
 [tool.ruff.format]

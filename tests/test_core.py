@@ -185,6 +185,52 @@ def test_restore_foreign_symlink_raises(cfg: Config, home: Path) -> None:
         core.restore(cfg, Path(".bashrc"))
 
 
+def test_restore_foreign_symlink_force_overwrites(
+    cfg: Config, home: Path
+) -> None:
+    stored = make_file(cfg.root / ".bashrc", "stored")
+    target = make_file(home / "elsewhere")
+    file = home / ".bashrc"
+    file.symlink_to(target)
+    message = core.restore(cfg, Path(".bashrc"), force=True)
+    assert file.is_symlink()
+    assert file.readlink() == stored
+    assert file.read_text() == "stored"
+    backup = home / ".bashrc.BAK"
+    assert backup.is_symlink()
+    assert backup.readlink() == target
+    assert "backed up" in message
+
+
+def test_restore_conflict_detection(cfg: Config, home: Path) -> None:
+    stored = make_file(cfg.root / ".bashrc", "stored")
+    assert not core.restore_conflict(stored, home / ".bashrc")
+    make_file(home / ".bashrc", "stored")
+    assert not core.restore_conflict(stored, home / ".bashrc")
+    make_file(home / ".bashrc", "other")
+    assert core.restore_conflict(stored, home / ".bashrc")
+    foreign = make_file(home / "foreign")
+    link = home / ".bashrc"
+    link.unlink()
+    link.symlink_to(foreign)
+    assert core.restore_conflict(stored, link)
+    link.unlink()
+    link.symlink_to(stored)
+    assert not core.restore_conflict(stored, link)
+
+
+def test_restore_force_dry_run_foreign_symlink(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".bashrc", "stored")
+    target = make_file(home / "elsewhere")
+    file = home / ".bashrc"
+    file.symlink_to(target)
+    report = core.restore(cfg, Path(".bashrc"), dry_run=True, force=True)
+    assert "would symlink: yes" in report
+    assert "back up" in report
+    assert file.is_symlink()
+    assert file.readlink() == target
+
+
 def test_restore_directory_destination_raises(cfg: Config, home: Path) -> None:
     make_file(cfg.root / ".config", "stored")
     (home / ".config").mkdir()
