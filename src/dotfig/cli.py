@@ -8,10 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
-from rich import box
 from rich.console import Console
 from rich.markup import escape
-from rich.syntax import Syntax
 from rich.table import Table
 
 from . import core
@@ -191,40 +189,15 @@ def _can_use_tui() -> bool:
 
 
 def _print_diff(target: Path, current: Path, *, side_by_side: bool) -> None:
-    if not (target.is_file() and current.is_file()):
-        console.print(f"cannot diff {current}; it is not a readable file")
-        return
-    if _can_use_tui():
-        show_diff(current, target, split=side_by_side)
-    elif side_by_side:
-        _print_side_by_side(target, current)
-    else:
-        console.print(
-            Syntax(core.diff(target, current), "diff", theme="ansi_dark")
-        )
+    """Open the interactive diff viewer for CURRENT and TARGET.
 
+    Raises:
+        DotfigError: If stdout/stdin are not an interactive terminal.
 
-def _print_side_by_side(target: Path, current: Path) -> None:
-    table = Table(
-        "destination",
-        "stored",
-        show_header=True,
-        box=box.MINIMAL,
-        pad_edge=False,
-    )
-    for column in table.columns:
-        column.no_wrap = True
-        column.overflow = "ellipsis"
-    for row in core.side_by_side(target, current):
-        left = escape(row.dest) if row.dest is not None else ""
-        right = escape(row.stored) if row.stored is not None else ""
-        if row.changed:
-            if row.dest is not None:
-                left = f"[red]{left}[/red]"
-            if row.stored is not None:
-                right = f"[green]{right}[/green]"
-        table.add_row(left, right)
-    console.print(table)
+    """
+    if not _can_use_tui():
+        raise DotfigError("showing a diff requires an interactive terminal")
+    show_diff(current, target, split=side_by_side)
 
 
 def _confirm_overwrite(

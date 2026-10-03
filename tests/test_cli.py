@@ -34,17 +34,9 @@ def test_color_common_leaves_other_paths_alone() -> None:
     assert _color_common("~/.bashrc", ".config") == "~/.bashrc"
 
 
-def test_print_diff_uses_tui_when_interactive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_print_diff_opens_viewer(
+    tmp_path: Path, diff_viewer: list[tuple[Path, Path, bool]]
 ) -> None:
-    calls: list[tuple[Path, Path, bool]] = []
-
-    def fake_show_diff(original: Path, modified: Path, *, split: bool) -> None:
-        calls.append((original, modified, split))
-
-    module = importlib.import_module("dotfig.cli")
-    monkeypatch.setattr(module, "_can_use_tui", lambda: True)
-    monkeypatch.setattr(module, "show_diff", fake_show_diff)
     target = tmp_path / "target"
     current = tmp_path / "current"
     target.write_text("new\n")
@@ -52,7 +44,7 @@ def test_print_diff_uses_tui_when_interactive(
 
     _print_diff(target, current, side_by_side=True)
 
-    assert calls == [(current, target, True)]
+    assert diff_viewer == [(current, target, True)]
 
 
 def test_init_creates_root_and_config(home: Path) -> None:
@@ -124,7 +116,9 @@ def test_store_force_overwrites_stored(home: Path) -> None:
     assert (root / ".bashrc.BAK").read_text() == "stored\n"
 
 
-def test_store_force_prompt_shows_diff_then_aborts(home: Path) -> None:
+def test_store_force_prompt_shows_diff_then_aborts(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     config = home / ".bashrc"
@@ -134,9 +128,8 @@ def test_store_force_prompt_shows_diff_then_aborts(home: Path) -> None:
 
     result = run(["store", "--force", str(config)], "d\nn\n")
     assert result.exit_code != 0
-    text = output(result)
-    assert "-stored" in text
-    assert "+local" in text
+    assert output(result).count("Continue? [y/N/(d)iff]") > 1
+    assert diff_viewer == [(stored, config, False)]
     assert config.read_text() == "local\n"
     assert not config.is_symlink()
     assert stored.read_text() == "stored\n"
@@ -194,48 +187,69 @@ def test_restore_dry_run_makes_no_changes(home: Path) -> None:
     assert not (home / ".bashrc").exists()
 
 
-def test_restore_diff_shows_changes(home: Path) -> None:
+def test_restore_diff_opens_viewer(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--diff", ".bashrc"])
     assert result.exit_code != 0
-    text = output(result)
-    assert "-local" in text
-    assert "+stored" in text
     assert config.read_text() == "local\n"
+    assert diff_viewer == [(config, stored, False)]
 
     no_diff = run(["restore", ".bashrc"])
-    assert "-local" not in output(no_diff)
+    assert no_diff.exit_code != 0
+    assert len(diff_viewer) == 1
 
 
-def test_restore_dry_run_diff(home: Path) -> None:
+def test_restore_diff_requires_terminal(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     (root / ".bashrc").write_text("stored\n")
     (home / ".bashrc").write_text("local\n")
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_can_use_tui", lambda: False)
+
+    result = run(["restore", "--diff", ".bashrc"])
+    assert result.exit_code != 0
+    assert "terminal" in output(result)
+
+
+def test_restore_dry_run_diff(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
 
     result = run(["restore", "--dry-run", "--diff", ".bashrc"])
     assert result.exit_code == 0, output(result)
-    assert "-local" in output(result)
-    assert "+stored" in output(result)
+    assert diff_viewer == [(config, stored, False)]
 
 
-def test_restore_force_diff_shows_diff(home: Path) -> None:
+def test_restore_force_diff_opens_viewer(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--force", "--diff", ".bashrc"], "y\n")
     assert result.exit_code == 0, output(result)
-    text = output(result)
-    assert "-local" in text
-    assert "+stored" in text
+    assert diff_viewer == [(config, stored, False)]
     assert config.is_symlink()
     assert config.read_text() == "stored\n"
 
@@ -258,10 +272,13 @@ def test_restore_force_foreign_symlink_prompts(home: Path) -> None:
     assert (home / ".bashrc.BAK").is_symlink()
 
 
-def test_restore_force_foreign_symlink_diff_then_aborts(home: Path) -> None:
+def test_restore_force_foreign_symlink_diff_then_aborts(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     foreign = home / "elsewhere"
     foreign.write_text("foreign\n")
     config = home / ".bashrc"
@@ -269,45 +286,45 @@ def test_restore_force_foreign_symlink_diff_then_aborts(home: Path) -> None:
 
     result = run(["restore", "--force", ".bashrc"], "d\nn\n")
     assert result.exit_code != 0
-    text = output(result)
-    assert "-foreign" in text
-    assert "+stored" in text
+    assert diff_viewer == [(config, stored, False)]
     assert config.is_symlink()
     assert config.read_text() == "foreign\n"
     assert not (home / ".bashrc.BAK").exists()
 
 
-def test_restore_side_by_side_shows_columns(home: Path) -> None:
+def test_restore_side_by_side_opens_split_viewer(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--side-by-side", ".bashrc"])
     assert result.exit_code != 0
-    text = output(result)
-    assert "destination" in text
-    assert "stored" in text
-    assert "local" in text
     assert config.read_text() == "local\n"
+    assert diff_viewer == [(config, stored, True)]
 
 
-def test_restore_force_side_by_side_prompt_diff(home: Path) -> None:
+def test_restore_force_side_by_side_prompt_diff(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--force", "--side-by-side", ".bashrc"], "d\ny\n")
     assert result.exit_code == 0, output(result)
-    text = output(result)
-    assert "destination" in text
-    assert "stored" in text
-    assert "local" in text
     assert config.is_symlink()
     assert config.read_text() == "stored\n"
+    assert diff_viewer
+    assert all(split for _, _, split in diff_viewer)
+    assert diff_viewer[-1] == (config, stored, True)
 
 
 def test_restore_force_overwrites_different_contents(home: Path) -> None:
@@ -326,36 +343,38 @@ def test_restore_force_overwrites_different_contents(home: Path) -> None:
     assert (home / ".bashrc.BAK").read_text() == "local\n"
 
 
-def test_restore_force_prompt_shows_diff_then_overwrites(home: Path) -> None:
+def test_restore_force_prompt_shows_diff_then_overwrites(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--force", ".bashrc"], "d\ny\n")
     assert result.exit_code == 0, output(result)
-    text = output(result)
-    assert "-local" in text
-    assert "+stored" in text
-    assert text.count("Continue? [y/N/(d)iff]") > 1
+    assert output(result).count("Continue? [y/N/(d)iff]") > 1
+    assert diff_viewer == [(config, stored, False)]
     assert config.is_symlink()
     assert config.read_text() == "stored\n"
 
 
-def test_restore_force_prompt_diff_then_aborts(home: Path) -> None:
+def test_restore_force_prompt_diff_then_aborts(
+    home: Path, diff_viewer: list[tuple[Path, Path, bool]]
+) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
-    (root / ".bashrc").write_text("stored\n")
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
     config = home / ".bashrc"
     config.write_text("local\n")
 
     result = run(["restore", "--force", ".bashrc"], "d\nn\n")
     assert result.exit_code != 0
-    text = output(result)
-    assert "-local" in text
-    assert "+stored" in text
-    assert text.count("Continue? [y/N/(d)iff]") > 1
+    assert output(result).count("Continue? [y/N/(d)iff]") > 1
+    assert diff_viewer == [(config, stored, False)]
     assert config.read_text() == "local\n"
     assert not config.is_symlink()
     assert not (home / ".bashrc.BAK").exists()

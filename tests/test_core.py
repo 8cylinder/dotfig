@@ -281,53 +281,6 @@ def test_restore_dry_run_already_linked(cfg: Config, home: Path) -> None:
     assert "already linked" in report
 
 
-def test_diff_shows_changes(tmp_path: Path) -> None:
-    stored = make_file(tmp_path / "stored", "new\n")
-    dest = make_file(tmp_path / "dest", "old\n")
-    result = core.diff(stored, dest)
-    assert "-old" in result
-    assert "+new" in result
-
-
-def test_diff_identical_files_is_empty(tmp_path: Path) -> None:
-    stored = make_file(tmp_path / "stored", "same\n")
-    dest = make_file(tmp_path / "dest", "same\n")
-    assert not core.diff(stored, dest)
-
-
-def test_side_by_side_aligns_replaced_lines(tmp_path: Path) -> None:
-    stored = make_file(tmp_path / "stored", "a\nnew\nc\n")
-    dest = make_file(tmp_path / "dest", "a\nold\nc\n")
-    rows = core.side_by_side(stored, dest)
-    assert [(row.dest, row.stored, row.changed) for row in rows] == [
-        ("a", "a", False),
-        ("old", "new", True),
-        ("c", "c", False),
-    ]
-
-
-def test_side_by_side_marks_deleted_lines(tmp_path: Path) -> None:
-    stored = make_file(tmp_path / "stored", "a\nc\n")
-    dest = make_file(tmp_path / "dest", "a\nb\nc\n")
-    rows = core.side_by_side(stored, dest)
-    assert [(row.dest, row.stored, row.changed) for row in rows] == [
-        ("a", "a", False),
-        ("b", None, True),
-        ("c", "c", False),
-    ]
-
-
-def test_side_by_side_marks_inserted_lines(tmp_path: Path) -> None:
-    stored = make_file(tmp_path / "stored", "a\nb\nc\n")
-    dest = make_file(tmp_path / "dest", "a\nc\n")
-    rows = core.side_by_side(stored, dest)
-    assert [(row.dest, row.stored, row.changed) for row in rows] == [
-        ("a", "a", False),
-        (None, "b", True),
-        ("c", "c", False),
-    ]
-
-
 def test_restore_force_overwrites_different_contents(
     cfg: Config, home: Path
 ) -> None:

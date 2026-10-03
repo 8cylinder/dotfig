@@ -108,8 +108,9 @@ and whether a symlink would be created (or why not).
   copy. `--force` asks for confirmation (`Continue? [y/N/(d)iff]`) before
   overwriting; answer `d` to open the diff viewer (split mode when
   `--side-by-side` is given) and be asked again. In the viewer, `space` toggles
-  split/unified, `a` toggles annotations, and `q` quits. When output is not a
-  terminal, a plain inline diff is printed instead.
+  split/unified, `a` toggles annotations, and `q` quits. The viewer needs an
+  interactive terminal; otherwise dotfig reports an error instead of showing a
+  diff.
 - If the destination is a foreign symlink: error. Pass `--force` to back the
   link up to `<name>.BAK` and replace it with a link to the stored copy (with
   the same confirmation prompt). If it already points at the root: no-op.

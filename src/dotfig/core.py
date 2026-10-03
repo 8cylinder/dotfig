@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import difflib
 import hashlib
 import os
 import shutil
@@ -21,19 +20,6 @@ class Entry:
     source: Path
     stored: Path
     status: str
-
-
-@dataclass(frozen=True)
-class DiffRow:
-    """One aligned row of a side-by-side diff.
-
-    Either side is ``None`` when the row exists only in the other file.
-    ``changed`` marks a row that differs between the two files.
-    """
-
-    dest: str | None
-    stored: str | None
-    changed: bool
 
 
 def absolute(path: Path) -> Path:
@@ -189,61 +175,6 @@ def restore_conflict(stored: Path, dest: Path) -> bool:
     if dest.is_file():
         return not contents_equal(dest, stored)
     return False
-
-
-def _read_lines(path: Path, *, keepends: bool) -> list[str]:
-    return path.read_text(encoding="utf-8", errors="replace").splitlines(
-        keepends=keepends
-    )
-
-
-def diff(stored: Path, dest: Path) -> str:
-    """Diff DEST against STORED.
-
-    Returns:
-        The unified diff of DEST becoming STORED, or an empty string when the
-        files are identical.
-
-    """
-    return "".join(
-        difflib.unified_diff(
-            _read_lines(dest, keepends=True),
-            _read_lines(stored, keepends=True),
-            fromfile=str(dest),
-            tofile=str(stored),
-        )
-    ).rstrip("\n")
-
-
-def side_by_side(stored: Path, dest: Path) -> list[DiffRow]:
-    """Align DEST and STORED into rows for a side-by-side diff.
-
-    Returns:
-        One row per aligned line, with ``None`` on the side that has no
-        counterpart and ``changed`` set on differing rows.
-
-    """
-    dest_lines = _read_lines(dest, keepends=False)
-    stored_lines = _read_lines(stored, keepends=False)
-    matcher = difflib.SequenceMatcher(None, dest_lines, stored_lines)
-    rows: list[DiffRow] = []
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            rows.extend(
-                DiffRow(line, line, changed=False) for line in dest_lines[i1:i2]
-            )
-            continue
-        left = dest_lines[i1:i2]
-        right = stored_lines[j1:j2]
-        rows.extend(
-            DiffRow(
-                left[index] if index < len(left) else None,
-                right[index] if index < len(right) else None,
-                changed=True,
-            )
-            for index in range(max(len(left), len(right)))
-        )
-    return rows
 
 
 def _link(stored: Path, source: Path) -> None:
