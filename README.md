@@ -90,12 +90,17 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with three columns: `source` (the stored path in the
+List every stored file with four columns: `id`, `source` (the stored path in the
 root), `destination` (the mirrored path under `$HOME`), and the link status:
-`linked`, `not linked`, `missing`, or `wrong link -> <target>`. Paths under
+`linked`, `not linked`, `missing`, or `wrong link -> <target>`. The `id` column
+assigns lowercase IDs from the current sorted list order: `a` through `z`, then
+`aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
+run, so adding or removing a stored file can shift later IDs. Paths under
 `$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
 shared trailing path components appear in cyan in both columns. The `.git`
 directory is skipped so the root can itself be a git repo.
+
+Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
 ### store
 
@@ -119,16 +124,17 @@ to the stored copy.
 ### restore
 
 ```sh
-dotfig restore FILE
+dotfig restore ID
 ```
 
-Recreate a stored file's symlink in `$HOME`. `FILE` names a file inside the
-dotfig root, either relative to the root or as an absolute path under it. The
-mirrored path under `$HOME` is the destination, and its parent directories are
-created if needed.
+Recreate a stored file's symlink in `$HOME`. `ID` is the identifier shown by
+`dotfig list`; it is case-insensitive. Paths are no longer accepted, so run
+`dotfig list` first if you don't know the ID. The mirrored path under `$HOME` is
+the destination, and its parent directories are created if needed.
 
 ```sh
-dotfig restore .config/path/to/config.json
+dotfig list
+dotfig restore b
 ```
 
 Pass `-d` / `--dry-run` to inspect without touching the filesystem. It prints

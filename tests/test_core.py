@@ -352,3 +352,36 @@ def test_list_managed_missing_root_raises(home: Path) -> None:
     cfg = Config(root=home / "does-not-exist")
     with pytest.raises(DotfigError, match="does not exist"):
         core.list_managed(cfg)
+
+
+def test_entry_id_sequence() -> None:
+    indexes = (0, 1, 25, 26, 27, 51, 52)
+    assert [core.entry_id(index) for index in indexes] == [
+        "a",
+        "b",
+        "z",
+        "aa",
+        "ab",
+        "az",
+        "ba",
+    ]
+
+
+def test_entry_id_rejects_negative_index() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        core.entry_id(-1)
+
+
+def test_find_entry_resolves_ids(cfg: Config) -> None:
+    make_file(cfg.root / ".bashrc")
+    make_file(cfg.root / ".vimrc")
+    entries = core.list_managed(cfg)
+
+    assert core.find_entry(entries, "a").source.name == ".bashrc"
+    assert core.find_entry(entries, "B").source.name == ".vimrc"
+
+
+def test_find_entry_unknown_id_raises(cfg: Config) -> None:
+    make_file(cfg.root / ".bashrc")
+    with pytest.raises(DotfigError, match="unknown entry id"):
+        core.find_entry(core.list_managed(cfg), "z")

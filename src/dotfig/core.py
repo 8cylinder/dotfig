@@ -22,6 +22,26 @@ class Entry:
     status: str
 
 
+def entry_id(index: int) -> str:
+    """Return the lowercase list ID for a zero-based INDEX.
+
+    Returns:
+        The ID as ``a`` through ``z``, then ``aa``, ``ab``, and so on.
+
+    Raises:
+        ValueError: If INDEX is negative.
+
+    """
+    if index < 0:
+        raise ValueError("index must be non-negative")
+    chars: list[str] = []
+    value = index + 1
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        chars.append(chr(ord("a") + remainder))
+    return "".join(reversed(chars))
+
+
 def absolute(path: Path) -> Path:
     """Make a path absolute without resolving symlinks.
 
@@ -399,3 +419,22 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
                 )
             )
     return entries
+
+
+def find_entry(entries: list[Entry], ref: str) -> Entry:
+    """Return the entry whose list ID is REF.
+
+    Returns:
+        The matching entry.
+
+    Raises:
+        DotfigError: If REF is not a current list ID.
+
+    """
+    wanted = ref.strip().lower()
+    for index, entry in enumerate(entries):
+        if entry_id(index) == wanted:
+            return entry
+    raise DotfigError(
+        f"unknown entry id {ref!r}; run 'dotfig list' to see the ids"
+    )

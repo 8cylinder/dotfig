@@ -84,7 +84,7 @@ def test_store_list_restore_flow(home: Path) -> None:
     assert "linked" in output(listed)
 
     config.unlink()
-    restored = run(["restore", ".bashrc"])
+    restored = run(["restore", "a"])
     assert restored.exit_code == 0, output(restored)
     assert config.is_symlink()
 
@@ -166,7 +166,7 @@ def test_restore_conflict_exits_nonzero(home: Path) -> None:
     (root / ".bashrc").write_text("stored")
     config = home / ".bashrc"
     config.write_text("local")
-    result = run(["restore", ".bashrc"])
+    result = run(["restore", "a"])
     assert result.exit_code != 0
     assert "differs" in output(result)
     assert config.read_text() == "local"
@@ -178,12 +178,12 @@ def test_restore_dry_run_makes_no_changes(home: Path) -> None:
     assert run(["init", str(root)]).exit_code == 0
     (root / ".bashrc").write_text("stored")
 
-    result = run(["restore", "--dry-run", ".bashrc"])
+    result = run(["restore", "--dry-run", "a"])
     assert result.exit_code == 0, output(result)
     assert "would symlink: yes" in output(result)
     assert not (home / ".bashrc").exists()
 
-    short = run(["restore", "-d", ".bashrc"])
+    short = run(["restore", "-d", "a"])
     assert short.exit_code == 0, output(short)
     assert "would symlink: yes" in output(short)
     assert not (home / ".bashrc").exists()
@@ -199,12 +199,12 @@ def test_restore_diff_opens_viewer(
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--diff", ".bashrc"])
+    result = run(["restore", "--diff", "a"])
     assert result.exit_code != 0
     assert config.read_text() == "local\n"
     assert diff_viewer == [(config, stored)]
 
-    no_diff = run(["restore", ".bashrc"])
+    no_diff = run(["restore", "a"])
     assert no_diff.exit_code != 0
     assert len(diff_viewer) == 1
 
@@ -219,7 +219,7 @@ def test_restore_diff_requires_terminal(
     module = importlib.import_module("dotfig.cli")
     monkeypatch.setattr(module, "_can_use_tui", lambda: False)
 
-    result = run(["restore", "--diff", ".bashrc"])
+    result = run(["restore", "--diff", "a"])
     assert result.exit_code != 0
     assert "terminal" in output(result)
 
@@ -236,7 +236,7 @@ def test_restore_diff_reports_missing_diff_tools(
     monkeypatch.setattr(module, "_can_use_tui", lambda: True)
     monkeypatch.setattr(diffview.shutil, "which", lambda _: None)
 
-    result = run(["restore", "--diff", ".bashrc"])
+    result = run(["restore", "--diff", "a"])
     assert result.exit_code != 0
     assert "no diff command" in output(result)
 
@@ -251,7 +251,7 @@ def test_restore_dry_run_diff(
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--dry-run", "--diff", ".bashrc"])
+    result = run(["restore", "--dry-run", "--diff", "a"])
     assert result.exit_code == 0, output(result)
     assert diff_viewer == [(config, stored)]
 
@@ -266,7 +266,7 @@ def test_restore_force_diff_opens_viewer(
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--force", "--diff", ".bashrc"], "y\n")
+    result = run(["restore", "--force", "--diff", "a"], "y\n")
     assert result.exit_code == 0, output(result)
     assert diff_viewer == [(config, stored)]
     assert config.is_symlink()
@@ -283,7 +283,7 @@ def test_restore_force_foreign_symlink_prompts(home: Path) -> None:
     config = home / ".bashrc"
     config.symlink_to(foreign)
 
-    result = run(["restore", "--force", ".bashrc"], "y\n")
+    result = run(["restore", "--force", "a"], "y\n")
     assert result.exit_code == 0, output(result)
     assert "This will overwrite" in output(result)
     assert config.is_symlink()
@@ -303,7 +303,7 @@ def test_restore_force_foreign_symlink_diff_then_aborts(
     config = home / ".bashrc"
     config.symlink_to(foreign)
 
-    result = run(["restore", "--force", ".bashrc"], "d\nn\n")
+    result = run(["restore", "--force", "a"], "d\nn\n")
     assert result.exit_code != 0
     assert diff_viewer == [(config, stored)]
     assert config.is_symlink()
@@ -318,7 +318,7 @@ def test_restore_force_overwrites_different_contents(home: Path) -> None:
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--force", ".bashrc"], "y\n")
+    result = run(["restore", "--force", "a"], "y\n")
     assert result.exit_code == 0, output(result)
     assert "This will overwrite" in output(result)
     assert "Continue? [y/N/(d)iff]" in output(result)
@@ -337,7 +337,7 @@ def test_restore_force_prompt_shows_diff_then_overwrites(
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--force", ".bashrc"], "d\ny\n")
+    result = run(["restore", "--force", "a"], "d\ny\n")
     assert result.exit_code == 0, output(result)
     assert output(result).count("Continue? [y/N/(d)iff]") > 1
     assert diff_viewer == [(config, stored)]
@@ -355,7 +355,7 @@ def test_restore_force_prompt_diff_then_aborts(
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--force", ".bashrc"], "d\nn\n")
+    result = run(["restore", "--force", "a"], "d\nn\n")
     assert result.exit_code != 0
     assert output(result).count("Continue? [y/N/(d)iff]") > 1
     assert diff_viewer == [(config, stored)]
@@ -371,7 +371,7 @@ def test_restore_force_prompt_aborts(home: Path) -> None:
     config = home / ".bashrc"
     config.write_text("local\n")
 
-    result = run(["restore", "--force", ".bashrc"], "n\n")
+    result = run(["restore", "--force", "a"], "n\n")
     assert result.exit_code != 0
     assert "Continue?" in output(result)
     assert config.read_text() == "local\n"
@@ -384,7 +384,7 @@ def test_restore_force_without_conflict_does_not_prompt(home: Path) -> None:
     assert run(["init", str(root)]).exit_code == 0
     (root / ".bashrc").write_text("stored\n")
 
-    result = run(["restore", "--force", ".bashrc"])
+    result = run(["restore", "--force", "a"])
     assert result.exit_code == 0, output(result)
     assert "Continue?" not in output(result)
     assert (home / ".bashrc").is_symlink()
@@ -413,11 +413,62 @@ def test_list_shows_source_and_destination(home: Path) -> None:
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
     text = output(listed)
+    assert "id" in text
     assert "source" in text
     assert "destination" in text
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "linked" in text
+
+
+def test_restore_rejects_unknown_id(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored")
+
+    for ref in ("z", ".bashrc"):
+        result = run(["restore", ref])
+        assert result.exit_code != 0
+        assert "unknown entry id" in output(result)
+        assert "dotfig list" in output(result)
+
+
+def test_list_and_restore_two_letter_ids(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    for index in range(27):
+        (root / f"file{index:02d}").write_text(str(index))
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    assert "aa" in output(listed)
+
+    first = run(["restore", "a"])
+    assert first.exit_code == 0, output(first)
+    assert (home / "file00").is_symlink()
+
+    last = run(["restore", "aa"])
+    assert last.exit_code == 0, output(last)
+    assert (home / "file26").is_symlink()
+
+
+def test_no_args_lists_entries(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("export X=1")
+    assert run(["store", str(config)]).exit_code == 0
+
+    result = run([])
+    assert result.exit_code == 0, output(result)
+    assert result.output == run(["list"]).output
+    assert "~/.bashrc" in output(result)
+
+
+def test_no_args_without_init_fails(home: Path) -> None:
+    result = run([])
+    assert result.exit_code != 0
+    assert "init" in output(result)
 
 
 def test_completions_writes_bash_script(home: Path) -> None:
@@ -473,10 +524,11 @@ def test_completions_warns_for_old_bash(
 
 
 def test_config_flag_prints_path_and_exits(home: Path) -> None:
-    result = run(["--config", "list"])
-    assert result.exit_code == 0, output(result)
-    assert result.output.strip() == str(config_path())
-    assert "no stored config files" not in output(result)
+    for args in (["--config"], ["--config", "list"]):
+        result = run(args)
+        assert result.exit_code == 0, output(result)
+        assert result.output.strip() == str(config_path())
+        assert "no stored config files" not in output(result)
 
 
 def test_version_flag_reports_package_version() -> None:

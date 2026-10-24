@@ -24,6 +24,11 @@
   `src/dotfig/__init__.py`.
 - README is the behavior spec for `core.py` (`init` / `list` / `store` /
   `restore`).
+- Running `dotfig` with no subcommand invokes `list` (the group uses
+  `invoke_without_command` and `no_args_is_help=False`).
+- `list` assigns ephemeral IDs from the sorted `list_managed` order (`a`..`z`,
+  then `aa`, `ab`, ...). `restore ID` resolves that ID only and does not accept
+  stored paths.
 - The config is TOML at the platform config path (`config.toml`, resolved with
   `platformdirs`) and is read with stdlib `tomllib`, written by a hand-rolled
   escaper in `config.py` (no TOML writer dependency). `dotfig --config` prints

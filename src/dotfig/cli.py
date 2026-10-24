@@ -140,7 +140,11 @@ def _write_completions(
     ctx.exit()
 
 
-@click.group(context_settings=CONTEXT_SETTINGS)
+@click.group(
+    context_settings=CONTEXT_SETTINGS,
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 @click.version_option(package_name="dotfig")
 @click.option(
     "--config",
@@ -160,8 +164,11 @@ def _write_completions(
     callback=_write_completions,
     help="Write bash completions and exit.",
 )
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """Manage individual config files with a git-friendly dotfig tree."""
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(list_command)
 
 
 @cli.command()
@@ -205,15 +212,15 @@ def _color_common(path: str, common: str) -> str:
 @cli.command(name="list")
 @_handle_errors
 def list_command() -> None:
-    """List stored config files and whether each source is linked."""
+    """List stored config files with IDs and whether each source is linked."""
     cfg = Config.load()
     entries = core.list_managed(cfg)
     if not entries:
         console.print("no stored config files")
         return
     home = Path.home()
-    table = Table("source", "destination", "status")
-    for entry in entries:
+    table = Table("id", "source", "destination", "status")
+    for index, entry in enumerate(entries):
         if entry.status == "linked":
             color = "green"
         elif entry.status.startswith("wrong link"):
@@ -222,6 +229,7 @@ def list_command() -> None:
             color = "yellow"
         common = str(entry.stored.relative_to(cfg.root))
         table.add_row(
+            core.entry_id(index),
             _color_common(core.display_path(home, entry.stored), common),
             _color_common(core.display_path(home, entry.source), common),
             f"[{color}]{escape(entry.status)}[/]",
@@ -248,7 +256,7 @@ def store(file: Path, *, force: bool) -> None:
 
 
 @cli.command()
-@click.argument("file", type=click.Path(path_type=Path))
+@click.argument("entry_id", metavar="ID")
 @click.option(
     "-d",
     "--dry-run",
@@ -268,21 +276,25 @@ def store(file: Path, *, force: bool) -> None:
 )
 @_handle_errors
 def restore(
-    file: Path,
+    entry_id: str,
     *,
     dry_run: bool,
     show_diff: bool,
     force: bool,
 ) -> None:
-    """Restore FILE from the dotfig root."""
+    """Restore the entry with ID from the dotfig root.
+
+    ID is the identifier shown by 'dotfig list'.
+    """
     cfg = Config.load()
+    entry = core.find_entry(core.list_managed(cfg), entry_id)
     if show_diff:
-        _show_diff(cfg, file)
+        _show_diff(cfg, entry.stored)
     if force and not dry_run:
-        stored, dest = core.restore_paths(cfg, file)
+        stored, dest = core.restore_paths(cfg, entry.stored)
         if stored.is_file() and core.restore_conflict(stored, dest):
             _confirm_overwrite(target=stored, current=dest)
-    console.print(core.restore(cfg, file, dry_run=dry_run, force=force))
+    console.print(core.restore(cfg, entry.stored, dry_run=dry_run, force=force))
 
 
 def _store_conflicts(stored: Path, file: Path) -> bool:
