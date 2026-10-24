@@ -9,6 +9,9 @@ it out on other machines to sync your configs.
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (recommended)
+- [gdiff](https://github.com/8cylinder/gdiff) on `PATH` for the interactive
+  diff viewer. Without it, dotfig falls back to the standard `diff -u`
+  command.
 
 ## Install
 
@@ -119,23 +122,21 @@ and whether a symlink would be created (or why not).
 - If the destination is a regular file with identical contents: rename it to
   `<name>.BAK`, then symlink it to the stored copy.
 - If the destination is a regular file with different contents: warn and change
-  nothing. Pass `--diff` to open the difference in the interactive
-  [textual-diff-view](https://github.com/batrachianai/textual-diff-view) viewer,
-  or `--side-by-side` to open it in split (two-column) mode. Pass `--force` to
-  back the file up to `<name>.BAK` and replace it with a link to the stored
-  copy. `--force` asks for confirmation (`Continue? [y/N/(d)iff]`) before
-  overwriting; answer `d` to open the diff viewer (split mode when
-  `--side-by-side` is given) and be asked again. In the viewer, `space` toggles
-  split/unified, `a` toggles annotations, and `q` quits. The viewer needs an
-  interactive terminal; otherwise dotfig reports an error instead of showing a
-  diff.
+  nothing. Pass `--diff` to show the difference with
+  [gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
+  gdiff is not installed. Pass `--force` to back the file up to `<name>.BAK`
+  and replace it with a link to the stored copy. `--force` asks for confirmation
+  (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to show the diff and
+  be asked again. The gdiff viewer starts in side-by-side mode; `space` toggles
+  split/unified, `A` toggles annotations, and `q` quits. Showing a diff needs an
+  interactive terminal; otherwise dotfig reports an error.
 - If the destination is a foreign symlink: error. Pass `--force` to back the
   link up to `<name>.BAK` and replace it with a link to the stored copy (with
   the same confirmation prompt). If it already points at the root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
 
-`--diff`, `--side-by-side`, and `--force` combine with `--dry-run` to show what
-would happen without touching the filesystem.
+`--diff` and `--force` combine with `--dry-run` to show what would happen
+without touching the filesystem.
 
 ### install-completions
 
@@ -178,5 +179,5 @@ Layout:
 - `src/dotfig/cli.py` -- click + rich commands
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
 - `src/dotfig/config.py` -- `$HOME/.dotfig` load/save
-- `src/dotfig/diffview.py` -- interactive diff viewer built on textual-diff-view
+- `src/dotfig/diffview.py` -- diff viewer backed by gdiff, with `diff -u` fallback
 - `tests/` -- pytest suite

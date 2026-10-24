@@ -16,7 +16,8 @@
 ## Layout
 - `src/dotfig/cli.py` -- click + rich commands; `core.py` -- store/restore/list
   state machine and path mapping; `config.py` -- `$HOME/.dotfig`
-  load/save. Entry point `dotfig:main` in `src/dotfig/__init__.py`.
+  load/save; `diffview.py` -- shells out to `gdiff`, falling back to
+  `diff -u`. Entry point `dotfig:main` in `src/dotfig/__init__.py`.
 - README is the behavior spec for `core.py` (`init` / `list` / `store` /
   `restore`).
 - `.dotfig` is TOML stored in a file with no `.toml` extension: read with stdlib
@@ -26,6 +27,9 @@
 ## Gotchas
 - `core.absolute()` uses `os.path.abspath` on purpose: never use
   `Path.resolve()` on user paths, it follows symlinks and would break
-  managed/symlink detection.
+  managed/symlink detection. The one exception is `diffview.show_diff`, which
+  resolves symlinks for display so the viewer diffs the target contents.
+- Diffs require `gdiff` on `PATH` for the interactive view and fall back to
+  `diff -u`; do not add an in-process diff-viewer dependency.
 - Stored paths mirror `$HOME` under the root; `list_managed` skips `.git` so the
   root tree can itself be a git repo.

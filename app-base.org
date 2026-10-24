@@ -1,0 +1,80 @@
+
+#+title:    App base
+#+subtitle: Base functionality for all python cli apps
+
+
+If this is being applied to an existing app, iterate asking the user questions
+one at a time until a plan is worked out to apply and modify the existing app.
+
+* Base packages
+- click
+- rich
+- ty
+- ruff
+- pytest
+
+* Use make for command runner
+Use the following makefile example.  Adjust the commands as needed.
+
+#+begin_src Makefile
+  sync:
+  	uv sync
+
+  fmt:
+  	uv run ruff format .
+
+  lint:
+  	uv run ruff check --fix .
+
+  type:
+  	uv run ty check
+
+  test:
+  	uv run pytest
+
+  check:
+  	uv run ruff format --check .
+  	uv run ruff check .
+  	uv run ty check
+  	uv run pytest
+
+  install:
+  	uv tool install --editable --force .
+#+end_src
+
+* CLI completions
+Every app must have a command called =--completions= that is part
+of the base command in a click app.
+
+#+begin_example
+  command --completions sub-command --some-flag
+#+end_example
+
+Only write bash completions.
+
+Write completion script to =~/.local/share/bash-completion/completions/APP=
+and output the path to the completion script and a message to souce
+the script so it works in the current terminal.
+
+* Help
+In addition to having =--help= also make =-h= work for help also.
+
+* Configuration
+If a config file is needed use a toml file in the
+platform's default location.
+
+If a config file is used, add a =--config= option to the base click command
+that outputs the path to the config file and exits.
+
+* README.md
+- Describe how to download and build the project.
+- Document command arguments.
+- Add the github url.
+
+* Version
+Pull the version from a variable in the pyproject.toml file.  Don't set the
+version in the python script.
+
+* Misc
+1. make sure the =.gitignore= has the apropriate exclusions
+   added for a python app.

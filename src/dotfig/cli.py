@@ -140,12 +140,6 @@ def store(file: Path, *, force: bool) -> None:
     help="Show a diff when the destination differs from the stored copy.",
 )
 @click.option(
-    "--side-by-side",
-    "side_by_side",
-    is_flag=True,
-    help="Show the diff as two columns: destination and stored.",
-)
-@click.option(
     "--force",
     is_flag=True,
     help="Overwrite a differing destination with the stored copy.",
@@ -156,19 +150,16 @@ def restore(
     *,
     dry_run: bool,
     show_diff: bool,
-    side_by_side: bool,
     force: bool,
 ) -> None:
     """Restore FILE from the dotfig root."""
     cfg = Config.load()
-    if show_diff or side_by_side:
-        _show_diff(cfg, file, side_by_side=side_by_side)
+    if show_diff:
+        _show_diff(cfg, file)
     if force and not dry_run:
         stored, dest = core.restore_paths(cfg, file)
         if stored.is_file() and core.restore_conflict(stored, dest):
-            _confirm_overwrite(
-                target=stored, current=dest, side_by_side=side_by_side
-            )
+            _confirm_overwrite(target=stored, current=dest)
     console.print(core.restore(cfg, file, dry_run=dry_run, force=force))
 
 
@@ -180,31 +171,30 @@ def _store_conflicts(stored: Path, file: Path) -> bool:
     )
 
 
-def _show_diff(cfg: Config, file: Path, *, side_by_side: bool) -> None:
+def _show_diff(cfg: Config, file: Path) -> None:
     stored, dest = core.restore_paths(cfg, file)
     if stored.is_file() and core.restore_conflict(stored, dest):
-        _print_diff(stored, dest, side_by_side=side_by_side)
+        _print_diff(stored, dest)
 
 
 def _can_use_tui() -> bool:
     return all((sys.stdin.isatty(), sys.stdout.isatty()))
 
 
-def _print_diff(target: Path, current: Path, *, side_by_side: bool) -> None:
-    """Open the interactive diff viewer for CURRENT and TARGET.
+def _print_diff(target: Path, current: Path) -> None:
+    """Show the difference between CURRENT and TARGET.
 
     Raises:
-        DotfigError: If stdout/stdin are not an interactive terminal.
+        DotfigError: If stdout/stdin are not an interactive terminal, or the
+            diff tool fails.
 
     """
     if not _can_use_tui():
         raise DotfigError("showing a diff requires an interactive terminal")
-    show_diff(current, target, split=side_by_side)
+    show_diff(current, target)
 
 
-def _confirm_overwrite(
-    *, target: Path, current: Path, side_by_side: bool = False
-) -> None:
+def _confirm_overwrite(*, target: Path, current: Path) -> None:
     while True:
         answer = str(
             click.prompt(
@@ -217,7 +207,7 @@ def _confirm_overwrite(
             )
         ).lower()
         if answer == "d":
-            _print_diff(target, current, side_by_side=side_by_side)
+            _print_diff(target, current)
             continue
         if answer == "y":
             return

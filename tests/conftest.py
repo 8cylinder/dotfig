@@ -22,21 +22,17 @@ def cfg(home: Path) -> Config:
 
 
 @pytest.fixture
-def diff_viewer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> list[tuple[Path, Path, bool]]:
-    """Stub the textual diff viewer and record what would be shown.
+def diff_viewer(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Path, Path]]:
+    """Stub the external diff tool and record what would be shown.
 
     Returns:
-        A list of ``(original, modified, split)`` calls.
+        A list of ``(original, modified)`` calls.
 
     """
-    calls: list[tuple[Path, Path, bool]] = []
+    calls: list[tuple[Path, Path]] = []
 
-    def fake_show_diff(
-        original: Path, modified: Path, *, split: bool = False
-    ) -> None:
-        calls.append((original, modified, split))
+    def fake_show_diff(original: Path, modified: Path) -> None:
+        calls.append((original, modified))
 
     module = importlib.import_module("dotfig.cli")
     monkeypatch.setattr(module, "show_diff", fake_show_diff)

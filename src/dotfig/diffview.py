@@ -1,91 +1,57 @@
-"""Show file differences with the textual-diff-view widget."""
+"""Show file differences with gdiff, falling back to plain diff."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, override
+import shutil
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
+from typing import TYPE_CHECKING
 
-from textual import containers, widgets
-from textual.app import App, ComposeResult
-from textual_diff_view import DiffView, LoadError
+from .config import DotfigError
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-class DiffApp(App[int]):
-    """A Textual app that displays a diff between two files."""
+def _diff_path(path: Path) -> Path:
+    """Follow a symlink so its target contents are diffed, not the link text.
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("space", "toggle_split", "Split"),
-        ("a", "toggle_annotations", "Annotations"),
-        ("q", "quit", "Quit"),
-    ]
-
-    def __init__(self, original: Path, modified: Path, *, split: bool) -> None:
-        """Create the app.
-
-        Args:
-            original: Path to the original file.
-            modified: Path to the modified file.
-            split: Start in split (side-by-side) view when True.
-
-        """
-        super().__init__()
-        self.original = original
-        self.modified = modified
-        self.split = split
-        self.annotations = True
-        self.diff_view: DiffView | None = None
-
-    @override
-    def compose(self) -> ComposeResult:
-        """Lay out the scrollable diff area and the key footer.
-
-        Yields:
-            The diff scroll container and the key-binding footer.
-
-        """
-        yield containers.VerticalScroll(id="diff")
-        yield widgets.Footer()
-
-    async def on_mount(self) -> None:
-        """Load the two files and mount the diff widget."""
-        try:
-            diff_view = await DiffView.load(
-                self.original,
-                self.modified,
-                split=self.split,
-                annotations=self.annotations,
-            )
-        except LoadError as error:
-            self.notify(
-                str(error), title="Failed to load diff", severity="error"
-            )
-            self.exit(1)
-            return
-        self.diff_view = diff_view
-        await self.query_one("#diff", containers.VerticalScroll).mount(
-            diff_view
-        )
-
-    def action_toggle_split(self) -> None:
-        """Toggle between unified and split layouts."""
-        if self.diff_view is not None:
-            self.diff_view.split = not self.diff_view.split
-
-    def action_toggle_annotations(self) -> None:
-        """Toggle the +/- annotations."""
-        if self.diff_view is not None:
-            self.diff_view.annotations = not self.diff_view.annotations
-
-
-def show_diff(original: Path, modified: Path, *, split: bool = False) -> None:
-    """Display ORIGINAL and MODIFIED in an interactive diff viewer.
-
-    Args:
-        original: Path to the original file.
-        modified: Path to the modified file.
-        split: Start in split (side-by-side) view when True.
+    Returns:
+        The resolved path when PATH is a symlink, otherwise PATH unchanged.
 
     """
-    DiffApp(original, modified, split=split).run()
+    return path.resolve() if path.is_symlink() else path
+
+
+def show_diff(original: Path, modified: Path) -> None:
+    """Display ORIGINAL and MODIFIED in gdiff, or plain diff without gdiff.
+
+    Raises:
+        DotfigError: If neither gdiff nor diff is available, or the tool fails.
+
+    """
+    original = _diff_path(original)
+    modified = _diff_path(modified)
+
+    gdiff = shutil.which("gdiff")
+    if gdiff is not None:
+        completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+            [gdiff, str(original), str(modified)],
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise DotfigError(
+                f"gdiff exited with status {completed.returncode}"
+            )
+        return
+
+    diff = shutil.which("diff")
+    if diff is None:
+        raise DotfigError(
+            "gdiff is not installed and no diff command was found on PATH"
+        )
+    completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [diff, "-u", str(original), str(modified)],
+        check=False,
+    )
+    if completed.returncode > 1:
+        raise DotfigError(f"diff exited with status {completed.returncode}")
