@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib
+from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from click.testing import CliRunner, Result
 
 from dotfig.cli import _color_common, _print_diff, cli
+from dotfig.config import config_path
 
 if TYPE_CHECKING:
     import pytest
@@ -52,7 +54,7 @@ def test_init_creates_root_and_config(home: Path) -> None:
     result = run(["init", str(root)])
     assert result.exit_code == 0, output(result)
     assert root.is_dir()
-    assert (home / ".dotfig").is_file()
+    assert config_path().is_file()
     assert str(root) in output(result)
 
 
@@ -418,43 +420,76 @@ def test_list_shows_source_and_destination(home: Path) -> None:
     assert "linked" in text
 
 
-def test_completion_install_bash(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = home / "data"
-    monkeypatch.setenv("XDG_DATA_HOME", str(data))
-
-    result = run(["install-completions", "bash"])
+def test_completions_writes_bash_script(home: Path) -> None:
+    result = run(["--completions"])
     assert result.exit_code == 0, output(result)
-    script = data / "bash-completion" / "completions" / "dotfig"
+    script = home / "data" / "bash-completion" / "completions" / "dotfig"
     assert script.is_file()
     assert "_dotfig_completion" in script.read_text()
     text = output(result)
     assert "created" in text
+    assert str(script) in text
     assert f"source {script}" in text
 
 
-def test_completion_install_reports_overwrite(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    data = home / "data"
-    monkeypatch.setenv("XDG_DATA_HOME", str(data))
-
-    assert run(["install-completions", "bash"]).exit_code == 0
-    second = run(["install-completions", "bash"])
+def test_completions_reports_overwrite(home: Path) -> None:
+    assert run(["--completions"]).exit_code == 0
+    second = run(["--completions"])
     assert second.exit_code == 0, output(second)
     assert "overwrote" in output(second)
 
 
-def test_completion_install_defaults_to_shell_env(
+def test_completions_falls_back_to_local_share(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = home / "config"
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
-    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    monkeypatch.delenv("XDG_DATA_HOME")
 
-    result = run(["install-completions"])
+    result = run(["--completions"])
     assert result.exit_code == 0, output(result)
-    script = config / "fish" / "completions" / "dotfig.fish"
+    script = (
+        home / ".local" / "share" / "bash-completion" / "completions" / "dotfig"
+    )
     assert script.is_file()
-    assert "_dotfig_completion" in script.read_text()
+
+
+def test_completions_ignores_subcommand(home: Path) -> None:
+    result = run(["--completions", "store", "--force"])
+    assert result.exit_code == 0, output(result)
+    script = home / "data" / "bash-completion" / "completions" / "dotfig"
+    assert script.is_file()
+
+
+def test_completions_warns_for_old_bash(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_bash_version", lambda: (3, 2))
+
+    result = run(["--completions"])
+    assert result.exit_code == 0, output(result)
+    assert "bash 3.2 is too old" in result.stderr
+    script = home / "data" / "bash-completion" / "completions" / "dotfig"
+    assert script.is_file()
+
+
+def test_config_flag_prints_path_and_exits(home: Path) -> None:
+    result = run(["--config", "list"])
+    assert result.exit_code == 0, output(result)
+    assert result.output.strip() == str(config_path())
+    assert "no stored config files" not in output(result)
+
+
+def test_version_flag_reports_package_version() -> None:
+    result = run(["--version"])
+    assert result.exit_code == 0, output(result)
+    assert version("dotfig") in output(result)
+
+
+def test_short_help_flag_on_group_and_subcommand() -> None:
+    group = run(["-h"])
+    assert group.exit_code == 0, output(group)
+    assert "Usage" in output(group)
+
+    command = run(["store", "-h"])
+    assert command.exit_code == 0, output(command)
+    assert "Usage" in output(command)

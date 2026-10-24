@@ -1,12 +1,15 @@
 # AGENTS.md
 
 ## Setup
-- `uv` project, Python 3.13 pinned in `.python-version`. Run `uv sync` to create
-  `.venv`; it also installs the `dev` dependency group (pytest).
+- `uv` project, Python 3.13 pinned in `.python-version`. Run `make sync` (or
+  `uv sync`) to create `.venv`; it also installs the `dev` dependency group
+  (pytest).
 - `ruff` and `ty` are declared in `[project.dependencies]` (not a dev group), so
   `uv sync` installs them.
 
 ## Commands
+- Use the `Makefile`: `make fmt`, `make lint`, `make type`, `make test`,
+  `make check`, `make install`, `make sync`.
 - Run CLI: `uv run dotfig`
 - Tests: `uv run pytest` (single test: `uv run pytest tests/test_core.py -k
   store`)
@@ -14,15 +17,21 @@
 - Typecheck: `uv run ty check`
 
 ## Layout
-- `src/dotfig/cli.py` -- click + rich commands; `core.py` -- store/restore/list
-  state machine and path mapping; `config.py` -- `$HOME/.dotfig`
-  load/save; `diffview.py` -- shells out to `gdiff`, falling back to
-  `diff -u`. Entry point `dotfig:main` in `src/dotfig/__init__.py`.
+- `src/dotfig/cli.py` -- click + rich commands and global options; `core.py` --
+  store/restore/list state machine and path mapping; `config.py` -- platform
+  config path and TOML load/save; `diffview.py` -- shells out to `gdiff`,
+  falling back to `diff -u`. Entry point `dotfig:main` in
+  `src/dotfig/__init__.py`.
 - README is the behavior spec for `core.py` (`init` / `list` / `store` /
   `restore`).
-- `.dotfig` is TOML stored in a file with no `.toml` extension: read with stdlib
-  `tomllib`, written by a hand-rolled escaper in `config.py` (no TOML writer
-  dependency).
+- The config is TOML at the platform config path (`config.toml`, resolved with
+  `platformdirs`) and is read with stdlib `tomllib`, written by a hand-rolled
+  escaper in `config.py` (no TOML writer dependency). `dotfig --config` prints
+  the path and exits.
+- `--completions` writes bash completions to
+  `$XDG_DATA_HOME/bash-completion/completions/dotfig` (fallback
+  `~/.local/share/...`), prints the path and a `source` hint, and warns when
+  bash is older than 4.4. It is a base-command flag, not a subcommand.
 
 ## Gotchas
 - `core.absolute()` uses `os.path.abspath` on purpose: never use

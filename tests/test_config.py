@@ -7,9 +7,8 @@ import pytest
 from dotfig.config import Config, DotfigError, config_path, toml_string
 
 
-def test_config_path_defaults_to_home(home: Path) -> None:
-    assert config_path() == home / ".dotfig"
-    assert config_path(home) == home / ".dotfig"
+def test_config_path_uses_platform_config_dir(home: Path) -> None:
+    assert config_path() == home / "config" / "dotfig" / "config.toml"
 
 
 def test_save_and_load_round_trip(tmp_path: Path) -> None:

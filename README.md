@@ -1,5 +1,7 @@
 # dotfig
 
+[github.com/8cylinder/dotfig](https://github.com/8cylinder/dotfig)
+
 Manage individual config files with a git-friendly tree. `dotfig` stores files
 under a root directory that mirrors their path in `$HOME`, then replaces each
 source file with a symlink to the stored copy. Commit the root to git and check
@@ -9,49 +11,65 @@ it out on other machines to sync your configs.
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (recommended)
+- `make` for the development commands
 - [gdiff](https://github.com/8cylinder/gdiff) on `PATH` for the interactive
   diff viewer. Without it, dotfig falls back to the standard `diff -u`
   command.
 
-## Install
+## Download and build
 
-Install the CLI as a standalone tool:
+Clone the repository and install the CLI as an editable uv tool:
 
 ```sh
-uv tool install .
+git clone https://github.com/8cylinder/dotfig.git
+cd dotfig
+make sync
+make check
+make install
 dotfig --help
 ```
 
-After installing, add shell completion:
+`make install` runs `uv tool install --editable --force .`, so the `dotfig`
+command stays pointed at the checkout.
+
+To work from the checkout without installing the tool:
 
 ```sh
-dotfig install-completions           # detect the shell from $SHELL
-dotfig install-completions bash      # or name it explicitly
-```
-
-This writes a completion script to the standard per-user location
-(`~/.local/share/bash-completion/completions/dotfig` for bash,
-`~/.config/fish/completions/dotfig.fish` for fish, etc.) and prints a `source`
-command that enables it in the current shell. New bash/fish shells load it
-automatically; for zsh, make sure the target directory is on `$fpath`. For a
-one-off without writing a file, use Click's built-in mechanism:
-
-```sh
-eval "$(_DOTFIG_COMPLETE=bash_source dotfig)"
-```
-
-Or work from a checkout:
-
-```sh
-git clone <repo-url> dotfig
-cd dotfig
-uv sync
+make sync
 uv run dotfig --help
 ```
 
-## Usage
+## Global options
 
-Every command supports `-h` / `--help`.
+Every command supports `-h` and `--help`.
+
+| Option | Description |
+| --- | --- |
+| `-h`, `--help` | Show help. |
+| `--version` | Print the version from `pyproject.toml`. |
+| `--config` | Print the config file path and exit. |
+| `--completions` | Write the bash completion script and exit. |
+
+## Shell completion
+
+```sh
+dotfig --completions
+```
+
+This writes a bash completion script to
+`$XDG_DATA_HOME/bash-completion/completions/dotfig`, or
+`~/.local/share/bash-completion/completions/dotfig` when `XDG_DATA_HOME` is not
+set. It then prints the script path and the `source` command that enables
+completion in the current shell.
+
+Bash completion requires **bash 4.4 or newer** and bash-completion 2.x. On
+macOS, `/bin/bash` is 3.2, so install a newer bash (for example with Homebrew),
+use it as your shell, and source `bash-completion`. macOS defaults to zsh, which
+is not covered because dotfig only writes bash completions. The
+`dotfig --completions` command prints a warning when the `bash` on `PATH` is
+older than 4.4.
+
+## Usage
 
 ### init
 
@@ -59,8 +77,8 @@ Every command supports `-h` / `--help`.
 dotfig init PATH
 ```
 
-Create `PATH` (the dotfig root) if it doesn't exist and write the config file
-`$HOME/.dotfig`. Use `--force` to overwrite an existing config.
+Create `PATH` (the dotfig root) if it doesn't exist and write the platform
+config file. Use `--force` to overwrite an existing config.
 
 ```sh
 dotfig init ~/dotfiles
@@ -138,46 +156,51 @@ and whether a symlink would be created (or why not).
 `--diff` and `--force` combine with `--dry-run` to show what would happen
 without touching the filesystem.
 
-### install-completions
-
-```sh
-dotfig install-completions [SHELL]
-```
-
-Write a shell completion script for `SHELL` (`bash`, `zsh`, `fish`, or
-`powershell`), defaulting to the shell named by `$SHELL` (falling back to
-`bash`). The script is written to the standard per-user location and the command
-prints a `source` line to enable it in the current shell; new shells load it
-automatically (for zsh, ensure the target directory is on `$fpath`). No `sudo`
-is needed.
 ## Config file
 
-`$HOME/.dotfig` stores the root location in TOML, without the `.toml`
-extension. `~` and environment variables are expanded when it is loaded.
+The config is TOML in the platform's user config directory:
+
+- Linux: `$XDG_CONFIG_HOME/dotfig/config.toml` (default
+  `~/.config/dotfig/config.toml`)
+- macOS: `~/Library/Application Support/dotfig/config.toml`
+- Windows: `%APPDATA%\dotfig\config.toml`
+
+Run `dotfig --config` to print the resolved path. The file stores the root
+location:
 
 ```toml
 # -*- mode: toml -*-
 root = "/home/you/dotfiles"
 ```
 
+`~` and environment variables are expanded when the config is loaded. Older
+versions stored the config at `$HOME/.dotfig`; that path is no longer read, so
+run `dotfig init PATH` again after upgrading.
+
 ## Development
 
+Use the `Makefile` as the command runner:
+
 ```sh
-uv sync                      # create .venv and install dependencies
-uv run dotfig                # run the CLI from the checkout
+make sync    # create .venv and install dependencies
+make fmt     # format with ruff
+make lint    # lint with ruff --fix
+make type    # typecheck with ty
+make test    # run pytest
+make check   # format check, lint, typecheck, and tests
+make install # install the CLI as an editable uv tool
+```
 
-uv run pytest                # tests
-uv run pytest tests/test_core.py -k store   # a single test
+Run a single test directly:
 
-uv run ruff check            # lint (strict: all rules)
-uv run ruff format           # format
-uv run ty check              # typecheck
+```sh
+uv run pytest tests/test_core.py -k store
 ```
 
 Layout:
 
-- `src/dotfig/cli.py` -- click + rich commands
+- `src/dotfig/cli.py` -- click + rich commands and global options
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
-- `src/dotfig/config.py` -- `$HOME/.dotfig` load/save
+- `src/dotfig/config.py` -- platform config path and TOML load/save
 - `src/dotfig/diffview.py` -- diff viewer backed by gdiff, with `diff -u` fallback
 - `tests/` -- pytest suite

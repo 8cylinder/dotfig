@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import functools
 import os
+import re
+import shutil
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,7 +40,126 @@ def _handle_errors[**P](func: Callable[P, None]) -> Callable[P, None]:
     return wrapper
 
 
+def _print_config(
+    ctx: click.Context,
+    _param: click.Parameter,
+    value: bool,  # ruff: ignore[boolean-type-hint-positional-argument]
+) -> None:
+    """Print the config file path and exit."""
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo(config_path())
+    ctx.exit()
+
+
+def _bash_completion_path() -> Path:
+    """Return the bash completion script path.
+
+    Returns:
+        The path under ``$XDG_DATA_HOME`` or ``~/.local/share``.
+
+    """
+    data = Path(
+        os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    )
+    return data / "bash-completion" / "completions" / "dotfig"
+
+
+def _bash_version() -> tuple[int, int] | None:
+    """Return the installed bash major and minor version.
+
+    Returns:
+        The parsed version, or ``None`` when bash cannot be inspected.
+
+    """
+    bash = shutil.which("bash")
+    if bash is None:
+        return None
+    try:
+        completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+            [bash, "--norc", "-c", 'printf "%s\\n" "$BASH_VERSION"'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    match = re.match(r"^(\d+)\.(\d+)", completed.stdout)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _warn_old_bash(version: tuple[int, int]) -> None:
+    """Warn that VERSION is too old for Click's bash completion script."""
+    click.secho(
+        f"warning: bash {version[0]}.{version[1]} is too old for completions; "
+        "bash 4.4 or newer is required, so the script may not work. On macOS, "
+        "install a newer bash (for example with Homebrew) and use it as your "
+        "shell.",
+        fg="yellow",
+        err=True,
+    )
+
+
+def _bash_completion_script() -> str:
+    """Generate a bash completion script without Click's version check.
+
+    Returns:
+        The bash completion script for this command.
+
+    Raises:
+        DotfigError: If Click has no bash completion support.
+
+    """
+    complete_class = get_completion_class("bash")
+    if complete_class is None:
+        raise DotfigError("bash completion is not available")
+    completion = complete_class(cli, {}, "dotfig", "_DOTFIG_COMPLETE")
+    return completion.source_template % completion.source_vars()
+
+
+def _write_completions(
+    ctx: click.Context,
+    _param: click.Parameter,
+    value: bool,  # ruff: ignore[boolean-type-hint-positional-argument]
+) -> None:
+    """Write the bash completion script and exit."""
+    if not value or ctx.resilient_parsing:
+        return
+    version = _bash_version()
+    if version is not None and version < (4, 4):
+        _warn_old_bash(version)
+    path = _bash_completion_path()
+    existed = path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_bash_completion_script(), encoding="utf-8")
+    console.print(f"{'overwrote' if existed else 'created'} {path}")
+    console.print("to enable completion in this shell, run:", soft_wrap=True)
+    console.print(f"  source {path}", soft_wrap=True)
+    ctx.exit()
+
+
 @click.group(context_settings=CONTEXT_SETTINGS)
+@click.version_option(package_name="dotfig")
+@click.option(
+    "--config",
+    "show_config",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_print_config,
+    help="Print the config file path and exit.",
+)
+@click.option(
+    "--completions",
+    "write_completions",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_write_completions,
+    help="Write bash completions and exit.",
+)
 def cli() -> None:
     """Manage individual config files with a git-friendly dotfig tree."""
 
@@ -212,54 +334,6 @@ def _confirm_overwrite(*, target: Path, current: Path) -> None:
         if answer == "y":
             return
         raise click.Abort
-
-
-_SHELLS = ("bash", "zsh", "fish", "powershell")
-
-
-def _default_shell() -> str:
-    name = Path(os.environ.get("SHELL", "")).name
-    return name if name in _SHELLS else "bash"
-
-
-def _completion_path(shell: str) -> Path:
-    data = Path(
-        os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
-    )
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    return {
-        "bash": data / "bash-completion" / "completions" / "dotfig",
-        "zsh": data / "zsh" / "site-functions" / "_dotfig",
-        "fish": config / "fish" / "completions" / "dotfig.fish",
-        "powershell": config / "dotfig" / "completions.ps1",
-    }[shell]
-
-
-def _completion_script(shell: str) -> str:
-    complete_class = get_completion_class(shell)
-    if complete_class is None:
-        raise DotfigError(f"unsupported shell: {shell}")
-    return complete_class(cli, {}, "dotfig", "_DOTFIG_COMPLETE").source()
-
-
-@cli.command(name="install-completions")
-@click.argument("shell", type=click.Choice(_SHELLS), required=False)
-@_handle_errors
-def install_completions(shell: str | None) -> None:
-    """Write a completion script for SHELL (default: from $SHELL)."""
-    shell = shell or _default_shell()
-    path = _completion_path(shell)
-    existed = path.exists()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_completion_script(shell), encoding="utf-8")
-    console.print(f"{'overwrote' if existed else 'created'} {path}")
-    command = f". {path}" if shell == "powershell" else f"source {path}"
-    console.print("to enable completion in this shell, run:", soft_wrap=True)
-    console.print(f"  {command}", soft_wrap=True)
-    if shell == "zsh":
-        console.print(
-            "make sure that directory is in $fpath for new shells to load it"
-        )
 
 
 def main() -> None:

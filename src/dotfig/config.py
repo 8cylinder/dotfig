@@ -1,4 +1,4 @@
-"""Read and write the dotfig config file stored at $HOME/.dotfig."""
+"""Read and write the dotfig config file in the platform config directory."""
 
 from __future__ import annotations
 
@@ -7,21 +7,24 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-CONFIG_NAME = ".dotfig"
+from platformdirs import user_config_dir
+
+APP_NAME = "dotfig"
+CONFIG_NAME = "config.toml"
 
 
 class DotfigError(Exception):
     """User-facing error; the CLI prints the message and exits non-zero."""
 
 
-def config_path(home: Path | None = None) -> Path:
-    """Return the path to the dotfig config file.
+def config_path() -> Path:
+    """Return the platform-specific path to the dotfig config file.
 
     Returns:
-        The config file path under the given home directory.
+        The path to ``config.toml`` in the user's config directory.
 
     """
-    return (home or Path.home()) / CONFIG_NAME
+    return Path(user_config_dir(APP_NAME, appauthor=False)) / CONFIG_NAME
 
 
 @dataclass(frozen=True)
@@ -43,9 +46,7 @@ class Config:
         object.__setattr__(self, "root", root)
 
     @classmethod
-    def load(
-        cls, path: Path | None = None, *, home: Path | None = None
-    ) -> Config:
+    def load(cls, path: Path | None = None) -> Config:
         """Load the config from disk.
 
         Returns:
@@ -55,7 +56,7 @@ class Config:
             DotfigError: If the config is missing, invalid, or lacks a root.
 
         """
-        path = path or config_path(home)
+        path = path or config_path()
         if not path.is_file():
             raise DotfigError(f"{path} not found; run 'dotfig init PATH' first")
         try:
@@ -67,11 +68,9 @@ class Config:
             raise DotfigError(f"{path} must contain a 'root' string")
         return cls(root=Path(root))
 
-    def save(
-        self, path: Path | None = None, *, home: Path | None = None
-    ) -> None:
+    def save(self, path: Path | None = None) -> None:
         """Write the config to disk, creating parent directories."""
-        path = path or config_path(home)
+        path = path or config_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         text = "\n".join(
             [

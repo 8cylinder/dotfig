@@ -1,6 +1,6 @@
 [project]
 name = "dotfig"
-version = "0.1.0"
+version = "0.2.0"
 description = "Manage dot files"
 readme = "README.md"
 authors = [
@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "click>=8.5.0",
+    "platformdirs>=4.5.0",
     "rich>=15.0.0",
     "ruff>=0.16.8",
     "ty>=0.0.83",
@@ -23,12 +24,12 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.12.17,<0.13.0"]
+requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 
 [tool.uv]
-required-version = ">=0.12.17,<0.13"
+required-version = ">=0.13,<0.14"
 add-bounds = "exact"
 
 [tool.uv.pip]

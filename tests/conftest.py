@@ -11,6 +11,13 @@ from dotfig.config import Config
 @pytest.fixture
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    config = importlib.import_module("dotfig.config")
+    monkeypatch.setattr(
+        config,
+        "user_config_dir",
+        lambda *_args, **_kwargs: str(tmp_path / "config" / "dotfig"),
+    )
     return tmp_path
 
 

@@ -52,9 +52,17 @@ of the base command in a click app.
 
 Only write bash completions.
 
-Write completion script to =~/.local/share/bash-completion/completions/APP=
-and output the path to the completion script and a message to souce
-the script so it works in the current terminal.
+Write the completion script to =$XDG_DATA_HOME/bash-completion/completions/APP=,
+falling back to =~/.local/share/bash-completion/completions/APP= when
+=$XDG_DATA_HOME= is unset.  Output the path to the completion script and a
+message to source the script so it works in the current terminal.
+
+Bash completion requires bash 4.4 or newer (the generated script uses =compopt=
+and =complete -o nosort=) and bash-completion 2.x to auto-load the file.  Warn
+when the =bash= on =PATH= is older than 4.4.  On macOS =/bin/bash= is 3.2 and
+the default shell is zsh, so document that users need a newer bash (for example
+from Homebrew) and that zsh is not covered.  The unsuffixed =APP= filename works
+with bash-completion, though versions >= 2.18 prefer =APP.bash=.
 
 * Help
 In addition to having =--help= also make =-h= work for help also.
