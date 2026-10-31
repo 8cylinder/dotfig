@@ -238,6 +238,35 @@ def list_command() -> None:
 
 
 @cli.command()
+@click.argument("entry_id", metavar="ID")
+@_handle_errors
+def diff(entry_id: str) -> None:
+    """Show differences between the entry with ID and its destination.
+
+    ID is the identifier shown by 'dotfig list'.
+
+    Raises:
+        DotfigError: If the stored copy or destination is missing, the
+            destination is not a file, or stdout/stdin are not an interactive
+            terminal.
+
+    """
+    cfg = Config.load()
+    entry = core.find_entry(core.list_managed(cfg), entry_id)
+    stored, dest = core.restore_paths(cfg, entry.stored)
+    if not stored.is_file():
+        raise DotfigError(f"no stored copy at {stored}; nothing to diff")
+    if not dest.exists():
+        raise DotfigError(f"{dest} does not exist; nothing to diff")
+    if not dest.is_file():
+        raise DotfigError(f"{dest} is not a file; nothing to diff")
+    if core.contents_equal(stored, dest):
+        console.print(f"{dest} matches the stored copy", soft_wrap=True)
+        return
+    _print_diff(stored, dest)
+
+
+@cli.command()
 @click.argument("file", type=click.Path(path_type=Path))
 @click.option(
     "--force",

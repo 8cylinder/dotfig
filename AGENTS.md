@@ -22,8 +22,8 @@
   config path and TOML load/save; `diffview.py` -- shells out to `gdiff`,
   falling back to `diff -u`. Entry point `dotfig:main` in
   `src/dotfig/__init__.py`.
-- README is the behavior spec for `core.py` (`init` / `list` / `store` /
-  `restore`).
+- README is the behavior spec for `core.py` (`init` / `list` / `diff` /
+  `store` / `restore`).
 - Running `dotfig` with no subcommand invokes `list` (the group uses
   `invoke_without_command` and `no_args_is_help=False`).
 - `list` assigns ephemeral IDs from the sorted `list_managed` order (`a`..`z`,

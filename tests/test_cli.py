@@ -209,6 +209,71 @@ def test_restore_diff_opens_viewer(
     assert len(diff_viewer) == 1
 
 
+def test_diff_shows_stored_and_destination(
+    home: Path, diff_viewer: list[tuple[Path, Path]]
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+
+    result = run(["diff", "a"])
+    assert result.exit_code == 0, output(result)
+    assert diff_viewer == [(config, stored)]
+
+
+def test_diff_reports_matching_files(
+    home: Path, diff_viewer: list[tuple[Path, Path]]
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("same\n")
+    assert run(["store", str(config)]).exit_code == 0
+
+    result = run(["diff", "a"])
+    assert result.exit_code == 0, output(result)
+    assert "matches the stored copy" in output(result)
+    assert diff_viewer == []
+
+
+def test_diff_missing_destination_fails(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+
+    result = run(["diff", "a"])
+    assert result.exit_code != 0
+    assert "does not exist" in output(result)
+
+
+def test_diff_rejects_unknown_id(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+
+    result = run(["diff", "z"])
+    assert result.exit_code != 0
+    assert "unknown entry id" in output(result)
+
+
+def test_diff_requires_terminal(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    (home / ".bashrc").write_text("local\n")
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_can_use_tui", lambda: False)
+
+    result = run(["diff", "a"])
+    assert result.exit_code != 0
+    assert "terminal" in output(result)
+
+
 def test_restore_diff_requires_terminal(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

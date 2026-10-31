@@ -102,6 +102,22 @@ directory is skipped so the root can itself be a git repo.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
+### diff
+
+```sh
+dotfig diff ID
+```
+
+Show the difference between the entry with `ID` and its destination under
+`$HOME`. `ID` is the identifier shown by `dotfig list`; it is case-insensitive.
+This is the same view that `restore --diff` opens: the destination is the
+original side and the stored copy is the modified side. It uses
+[gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
+gdiff is not installed, and needs an interactive terminal.
+
+If the destination is missing or is not a file, the command fails. If the
+contents match, it reports that and does not open the viewer.
+
 ### store
 
 ```sh
