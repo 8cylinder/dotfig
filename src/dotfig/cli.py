@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import click
 from click.shell_completion import get_completion_class
+from rich import box
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -219,7 +220,7 @@ def list_command() -> None:
         console.print("no stored config files")
         return
     home = Path.home()
-    table = Table("id", "source", "destination", "status")
+    table = Table("id", "source", "destination", "status", box=box.SIMPLE_HEAD)
     for index, entry in enumerate(entries):
         if entry.status == "linked":
             color = "green"
