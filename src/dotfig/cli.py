@@ -220,7 +220,15 @@ def list_command() -> None:
         console.print("no stored config files")
         return
     home = Path.home()
-    table = Table("id", "source", "destination", "status", box=box.SIMPLE_HEAD)
+    table = Table(
+        "id",
+        "source",
+        "destination",
+        "status",
+        box=box.SIMPLE_HEAD,
+        show_edge=False,
+        pad_edge=False,
+    )
     for index, entry in enumerate(entries):
         if entry.status == "linked":
             color = "green"
