@@ -9,11 +9,11 @@ The directory that mirrors `$HOME` and holds the stored copies. Commit it to git
 _Avoid_: tree, repo (when the root itself is meant)
 
 **Managed file**:
-A file whose stored copy lives under the dotfig root and whose `$HOME` path is a symlink to that copy.
+A file whose stored copy lives under the dotfig root and whose `$HOME` path is a regular copy of it.
 _Avoid_: single file, linked file
 
 **Managed directory**:
-A directory stored under the dotfig root as one unit, whose `$HOME` path is a single symlink to the stored directory.
+A directory stored under the dotfig root as one unit, copied to its `$HOME` path.
 _Avoid_: dir sync, directory link
 
 **Stored copy**:
@@ -28,6 +28,6 @@ _Avoid_: source, stored path
 The mirrored path under `$HOME` for a managed entry.
 _Avoid_: destination, target
 
-**Link status**:
-The state of a managed entry's `$HOME` path: `linked`, `not linked`, `missing`, or `wrong link`.
-_Avoid_: state, health
+**Match status**:
+Whether a managed entry's host copy has the same contents as its store copy: `✓` when they match, `✗` when they differ or the host copy is missing.
+_Avoid_: link status, state, health

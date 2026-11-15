@@ -1,6 +1,6 @@
 # Store directories as whole-directory symlinks
 
-**Status**: accepted
+**Status**: superseded by 0002
 
 When `dotfig store` is given a directory, it stores the directory in the dotfig root as one unit and replaces the `$HOME` path with a single symlink to that stored directory. The alternative was to recurse and manage each file individually, which keeps file-level conflict handling but makes a stored directory a snapshot: new files are not picked up until the next `store`. The whole-directory link makes new and deleted files follow the link automatically, at the cost of coarser listing and conflict handling.
 

@@ -213,7 +213,7 @@ def _color_common(path: str, common: str) -> str:
 @cli.command(name="list")
 @_handle_errors
 def list_command() -> None:
-    """List stored config files with IDs and whether each host is linked."""
+    """List stored config files with IDs and a match status."""
     cfg = Config.load()
     entries = core.list_managed(cfg)
     if not entries:
@@ -230,18 +230,14 @@ def list_command() -> None:
         pad_edge=False,
     )
     for index, entry in enumerate(entries):
-        if entry.status == "linked":
-            color = "green"
-        elif entry.status.startswith("wrong link"):
-            color = "red"
-        else:
-            color = "yellow"
+        symbol = "✓" if entry.matches else "✗"
+        color = "green" if entry.matches else "red"
         common = str(entry.store.relative_to(cfg.root))
         table.add_row(
             core.entry_id(index),
             _color_common(core.display_path(home, entry.store), common),
             _color_common(core.display_path(home, entry.host), common),
-            f"[{color}]{escape(entry.status)}[/]",
+            f"[{color}]{symbol}[/]",
         )
     console.print(table)
 
@@ -334,9 +330,20 @@ def restore(
     console.print(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
 
 
+@cli.command(name="break", hidden=True)
+@click.argument("entry_id", metavar="ID")
+@_handle_errors
+def break_command(entry_id: str) -> None:
+    """Replace a managed host symlink with a copy of the stored file."""
+    cfg = Config.load()
+    entry = core.find_entry(core.list_managed(cfg), entry_id)
+    console.print(core.break_link(cfg, entry.store))
+
+
 def _store_conflicts(store: Path, file: Path) -> bool:
     return (
-        store.is_file()
+        not file.is_symlink()
+        and store.is_file()
         and file.is_file()
         and not core.contents_equal(store, file)
     )
@@ -344,7 +351,11 @@ def _store_conflicts(store: Path, file: Path) -> bool:
 
 def _show_diff(cfg: Config, file: Path) -> None:
     store, host = core.restore_paths(cfg, file)
-    if store.is_file() and core.restore_conflict(store, host):
+    if (
+        store.is_file()
+        and host.is_file()
+        and not core.contents_equal(store, host)
+    ):
         _print_diff(store, host)
 
 

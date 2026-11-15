@@ -2,10 +2,10 @@
 
 [github.com/8cylinder/dotfig](https://github.com/8cylinder/dotfig)
 
-Manage individual config files with a git-friendly tree. `dotfig` stores files
-under a root directory that mirrors their path in `$HOME`, then replaces each
-file in `$HOME` with a symlink to the stored copy. Commit the root to git and
-check it out on other machines to sync your configs.
+Manage individual config files with a git-friendly tree. `dotfig` keeps copies
+of files in a root directory that mirrors their path in `$HOME`, copying files
+between the store and the host. Commit the root to git and check it out on other
+machines to sync your configs.
 
 ## Requirements
 
@@ -91,14 +91,15 @@ dotfig list
 ```
 
 List every stored file with four columns: `id`, `store` (the stored path in the
-root), `host` (the mirrored path under `$HOME`), and the link status: `linked`,
-`not linked`, `missing`, or `wrong link -> <target>`. The `id` column assigns
-lowercase IDs from the current sorted list order: `a` through `z`, then `aa`,
-`ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each run,
-so adding or removing a stored file can shift later IDs. Paths under `$HOME` are
-shown with a leading `~`; paths outside it are shown absolute. The shared
-trailing path components appear in cyan in both columns. The `.git` directory
-is skipped so the root can itself be a git repo.
+root), `host` (the mirrored path under `$HOME`), and the match status: `✓` when
+the host path is a regular file with identical contents, `✗` when it differs,
+is missing, is not a regular file, or is still a symlink. The `id` column
+assigns lowercase IDs from the current sorted list order: `a` through `z`, then
+`aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
+run, so adding or removing a stored file can shift later IDs. Paths under
+`$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
+shared trailing path components appear in cyan in both columns. The `.git`
+directory is skipped so the root can itself be a git repo.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
@@ -124,13 +125,13 @@ contents match, it reports that and does not open the viewer.
 dotfig store FILE
 ```
 
-Move `FILE` into the root, mirroring its `$HOME` path, and symlink `FILE` back
-to the stored copy.
+Copy `FILE` into the root, mirroring its `$HOME` path. `FILE` stays in place as
+a regular file; `dotfig` never creates symlinks.
 
-- If `FILE` is already a correct symlink into the root: report it and do nothing.
-- If a stored copy exists with the same contents: replace `FILE` with a symlink.
+- If `FILE` is a symlink: error and point at `dotfig break`.
+- If a stored copy exists with the same contents: report it and do nothing.
 - If a stored copy exists with different contents: error and change nothing.
-  Pass `--force` to back the stored copy up to `<name>.BAK` and store `FILE`
+  Pass `--force` to back the stored copy up to `<name>.BAK` and copy `FILE`
   instead. Like `restore --force`, it asks for confirmation
   (`Continue? [y/N/(d)iff]`) and `d` opens the diff viewer before asking again.
 - `FILE` must be under `$HOME` and is never resolved through symlinks. A path
@@ -143,10 +144,10 @@ to the stored copy.
 dotfig restore ID
 ```
 
-Recreate a stored file's symlink in `$HOME`. `ID` is the identifier shown by
-`dotfig list`; it is case-insensitive. Paths are no longer accepted, so run
-`dotfig list` first if you don't know the ID. The mirrored path under `$HOME` is
-the host path, and its parent directories are created if needed.
+Copy a stored file back to its host path in `$HOME`. `ID` is the identifier
+shown by `dotfig list`; it is case-insensitive. Paths are no longer accepted, so
+run `dotfig list` first if you don't know the ID. The mirrored path under `$HOME`
+is the host path, and its parent directories are created if needed.
 
 ```sh
 dotfig list
@@ -155,28 +156,34 @@ dotfig restore b
 
 Pass `-d` / `--dry-run` to inspect without touching the filesystem. It prints
 the host path, whether it exists, whether it matches the stored copy, and
-whether a symlink would be created (or why not).
+whether a copy would be made (or why not).
 
-- If the host path is missing: create parent dirs and symlink it to the
-  stored copy.
-- If the host path is a regular file with identical contents: rename it to
-  `<name>.BAK`, then symlink it to the stored copy.
+- If the host path is missing: create parent dirs and copy the stored file.
+- If the host path is a regular file with identical contents: report that it is
+  already restored and change nothing.
 - If the host path is a regular file with different contents: warn and change
   nothing. Pass `--diff` to show the difference with
   [gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
   gdiff is not installed. Pass `--force` to back the file up to `<name>.BAK`
-  and replace it with a link to the stored copy. `--force` asks for confirmation
+  and replace it with the stored copy. `--force` asks for confirmation
   (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to show the diff and
   be asked again. The gdiff viewer starts in side-by-side mode; `space` toggles
   split/unified, `A` toggles annotations, and `q` quits. Showing a diff needs an
   interactive terminal; otherwise dotfig reports an error.
-- If the host path is a foreign symlink: error. Pass `--force` to back the
-  link up to `<name>.BAK` and replace it with a link to the stored copy (with
-  the same confirmation prompt). If it already points at the root: no-op.
+- If the host path is a symlink: error, even with `--force`. Run
+  `dotfig break ID` first to turn the link into a regular copy.
+- If the host path is a directory: error.
 - If there is no stored copy: error (`nothing to restore`).
 
 `--diff` and `--force` combine with `--dry-run` to show what would happen
 without touching the filesystem.
+
+### Migrating from symlinks
+
+Earlier versions replaced host files with symlinks. To convert an existing
+managed symlink into a regular copy, run `dotfig break ID`. The command is
+hidden from `--help` and is intended only for this transition: it replaces the
+link with a copy of the stored file.
 
 ## Config file
 

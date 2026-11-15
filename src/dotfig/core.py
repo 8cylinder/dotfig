@@ -1,10 +1,11 @@
-"""Store config files in a dotfig tree and symlink them back into $HOME."""
+"""Store config files in a dotfig tree and copy them back into $HOME."""
 
 from __future__ import annotations
 
 import hashlib
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,11 +16,11 @@ _CHUNK_SIZE = 1024 * 1024
 
 @dataclass(frozen=True)
 class Entry:
-    """A stored file and the state of its link back into $HOME."""
+    """A stored file and whether the host copy matches it."""
 
     host: Path
     store: Path
-    status: str
+    matches: bool
 
 
 def entry_id(index: int) -> str:
@@ -179,31 +180,39 @@ def contents_equal(first: Path, second: Path) -> bool:
 
 
 def restore_conflict(store: Path, host: Path) -> bool:
-    """Check whether restoring over HOST would replace a conflicting file.
+    """Check whether restoring over HOST would replace a differing file.
 
-    A conflict is a regular file whose contents differ from STORE, or a
-    symlink that does not point at STORE.
+    Symlinks are not treated as conflicts here because restore refuses them;
+    the caller should direct the user to ``dotfig break`` instead.
 
     Returns:
-        Whether HOST conflicts with STORE.
+        Whether HOST is a regular file whose contents differ from STORE.
 
     """
-    if host.is_symlink():
-        return _link_target(host) != store
-    if host.is_file():
-        return not contents_equal(host, store)
-    return False
+    if host.is_symlink() or not host.is_file():
+        return False
+    return not contents_equal(host, store)
 
 
-def _link(store: Path, host: Path) -> None:
-    host.parent.mkdir(parents=True, exist_ok=True)
-    host.symlink_to(store)
+def _replace_symlink_with_copy(store: Path, host: Path) -> None:
+    with tempfile.NamedTemporaryFile(
+        dir=host.parent,
+        prefix=f".{host.name}.",
+        suffix=".break",
+        delete=False,
+    ) as handle:
+        temp = Path(handle.name)
+    try:
+        shutil.copy2(store, temp)
+        temp.replace(host)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def store(
     cfg: Config, file: Path, *, home: Path | None = None, force: bool = False
 ) -> str:
-    """Store a file by moving it into the root and linking it back.
+    """Store a file by copying it into the root.
 
     Returns:
         A message describing what was done.
@@ -217,27 +226,22 @@ def store(
     store = store_path(cfg, file, home=home)
 
     if file.is_symlink():
-        target = _link_target(file)
-        if target != store:
-            raise DotfigError(
-                f"{file} is a symlink to {target}, not to the dotfig root"
-            )
-        if not store.exists():
-            raise DotfigError(f"{file} is a broken link; {store} is missing")
-        return f"{file} is already stored"
-
+        raise DotfigError(
+            f"{file} is a symlink; run 'dotfig list' and 'dotfig break ID' "
+            "to replace it with a copy"
+        )
     if not file.exists():
         raise DotfigError(f"{file} does not exist")
     if not file.is_file():
         raise DotfigError(f"{file} is a directory; only files can be stored")
 
-    if store.exists() or store.is_symlink():
-        if store.is_dir():
-            raise DotfigError(f"{store} already exists and is a directory")
+    if store.is_symlink():
+        raise DotfigError(f"{store} is a symlink; refusing to overwrite it")
+    if store.is_dir():
+        raise DotfigError(f"{store} already exists and is a directory")
+    if store.exists():
         if contents_equal(file, store):
-            file.unlink()
-            _link(store, file)
-            return f"{file} matches the stored copy; linked it"
+            return f"{file} is already stored"
         if not force:
             raise DotfigError(
                 f"{store} exists with different contents; "
@@ -245,13 +249,11 @@ def store(
             )
         backup = store.with_name(f"{store.name}.BAK")
         store.rename(backup)
-        shutil.move(str(file), store)
-        _link(store, file)
+        shutil.copy2(file, store)
         return f"backed up {backup} and stored {file}"
 
     store.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(file), store)
-    _link(store, file)
+    shutil.copy2(file, store)
     return f"stored {file}"
 
 
@@ -265,40 +267,31 @@ def _dry_run_report(store: Path, host: Path, *, force: bool = False) -> str:
     exists = host.is_symlink() or host.exists()
     if host.is_symlink():
         target = _link_target(host)
-        if target == store:
-            same = "yes"
-            action = f"no (already linked to {store})"
-        elif force:
-            same = "no"
-            backup = host.with_name(f"{host.name}.BAK")
-            action = f"yes (back up to {backup}, then link to {store})"
-        else:
-            same = "no"
-            action = f"no (points to {target}, not the dotfig root)"
+        same = "yes" if target == store else "no"
+        action = "no (host is a symlink; run 'dotfig break ID' first)"
     elif host.is_dir():
         same = "no"
         action = "no (host is a directory)"
     elif host.is_file():
         if contents_equal(host, store):
             same = "yes"
-            backup = host.with_name(f"{host.name}.BAK")
-            action = f"yes (back up to {backup}, then link to {store})"
+            action = "no (already restored)"
         else:
             same = "no"
             if force:
                 backup = host.with_name(f"{host.name}.BAK")
-                action = f"yes (back up to {backup}, then link to {store})"
+                action = f"yes (back up to {backup}, then copy from {store})"
             else:
                 action = "no (contents differ from stored)"
     else:
         same = "n/a"
-        action = f"yes (link to {store})"
+        action = f"yes (copy from {store})"
     return "\n".join(
         [
             f"host: {host}",
             f"exists: {'yes' if exists else 'no'}",
             f"same: {same}",
-            f"would symlink: {action}",
+            f"would copy: {action}",
         ]
     )
 
@@ -311,7 +304,7 @@ def restore(
     dry_run: bool = False,
     force: bool = False,
 ) -> str:
-    """Restore a stored file by linking it back into $HOME.
+    """Restore a stored file by copying it back into $HOME.
 
     FILE names a file inside the dotfig root, relative to the root or as an
     absolute path under it. The mirrored path under $HOME is recreated.
@@ -333,43 +326,61 @@ def restore(
         return _dry_run_report(store, host, force=force)
 
     if host.is_symlink():
-        target = _link_target(host)
-        if target != store:
-            if not force:
-                raise DotfigError(
-                    f"{host} is a symlink to {target}, not to the dotfig root"
-                )
-            backup = host.with_name(f"{host.name}.BAK")
-            host.rename(backup)
-            _link(store, host)
-            return f"backed up {backup} and restored {host}"
-        return f"{host} is already restored"
+        raise DotfigError(
+            f"{host} is a symlink; run 'dotfig list' and 'dotfig break ID' "
+            "to replace it with a copy"
+        )
 
     if host.exists():
         if not host.is_file():
             raise DotfigError(f"{host} is a directory; refusing to replace it")
-        if not contents_equal(host, store) and not force:
+        if contents_equal(host, store):
+            return f"{host} is already restored"
+        if not force:
             raise DotfigError(
                 f"{host} differs from {store}; refusing to overwrite it"
             )
         backup = host.with_name(f"{host.name}.BAK")
         host.rename(backup)
-        _link(store, host)
+        shutil.copy2(store, host)
         return f"backed up {backup} and restored {host}"
 
-    _link(store, host)
+    host.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(store, host)
     return f"restored {host}"
 
 
-def _host_status(host: Path, store: Path) -> str:
-    if host.is_symlink():
-        target = _link_target(host)
-        if target == store:
-            return "linked"
-        return f"wrong link -> {target}"
-    if host.exists():
-        return "not linked"
-    return "missing"
+def break_link(cfg: Config, file: Path, *, home: Path | None = None) -> str:
+    """Replace a managed host symlink with a copy of the stored file.
+
+    Returns:
+        A message describing what was done.
+
+    Raises:
+        DotfigError: If the stored copy is missing, HOST is not a symlink, or
+            the link does not point at the stored copy.
+
+    """
+    store, host = restore_paths(cfg, file, home=home)
+    if not store.is_file():
+        raise DotfigError(f"no stored copy at {store}; nothing to break")
+    if not host.is_symlink():
+        raise DotfigError(f"{host} is not a symlink; nothing to break")
+    target = _link_target(host)
+    if target != store:
+        raise DotfigError(
+            f"{host} is a symlink to {target}, not to the dotfig root"
+        )
+    _replace_symlink_with_copy(store, host)
+    return f"broke link at {host}; copied {store}"
+
+
+def _matches(host: Path, store: Path) -> bool:
+    if host.is_symlink() or not host.is_file():
+        return False
+    if not store.is_file():
+        return False
+    return contents_equal(host, store)
 
 
 def display_path(home: Path, path: Path) -> str:
@@ -392,7 +403,7 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
     """List every file stored under the dotfig root.
 
     Returns:
-        One entry per stored file, with its link status.
+        One entry per stored file, with whether the host copy matches.
 
     Raises:
         DotfigError: If the dotfig root does not exist.
@@ -413,7 +424,7 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
                 Entry(
                     host=host,
                     store=store,
-                    status=_host_status(host, store),
+                    matches=_matches(host, store),
                 )
             )
     return entries
