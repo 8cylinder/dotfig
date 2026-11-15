@@ -213,7 +213,7 @@ def _color_common(path: str, common: str) -> str:
 @cli.command(name="list")
 @_handle_errors
 def list_command() -> None:
-    """List stored config files with IDs and whether each source is linked."""
+    """List stored config files with IDs and whether each host is linked."""
     cfg = Config.load()
     entries = core.list_managed(cfg)
     if not entries:
@@ -222,8 +222,8 @@ def list_command() -> None:
     home = Path.home()
     table = Table(
         "id",
-        "source",
-        "destination",
+        "store",
+        "host",
         "status",
         box=box.SIMPLE_HEAD,
         show_edge=False,
@@ -236,11 +236,11 @@ def list_command() -> None:
             color = "red"
         else:
             color = "yellow"
-        common = str(entry.stored.relative_to(cfg.root))
+        common = str(entry.store.relative_to(cfg.root))
         table.add_row(
             core.entry_id(index),
-            _color_common(core.display_path(home, entry.stored), common),
-            _color_common(core.display_path(home, entry.source), common),
+            _color_common(core.display_path(home, entry.store), common),
+            _color_common(core.display_path(home, entry.host), common),
             f"[{color}]{escape(entry.status)}[/]",
         )
     console.print(table)
@@ -250,29 +250,28 @@ def list_command() -> None:
 @click.argument("entry_id", metavar="ID")
 @_handle_errors
 def diff(entry_id: str) -> None:
-    """Show differences between the entry with ID and its destination.
+    """Show differences between the entry with ID and its host path.
 
     ID is the identifier shown by 'dotfig list'.
 
     Raises:
-        DotfigError: If the stored copy or destination is missing, the
-            destination is not a file, or stdout/stdin are not an interactive
-            terminal.
+        DotfigError: If the stored copy or host path is missing, the host path
+            is not a file, or stdout/stdin are not an interactive terminal.
 
     """
     cfg = Config.load()
     entry = core.find_entry(core.list_managed(cfg), entry_id)
-    stored, dest = core.restore_paths(cfg, entry.stored)
-    if not stored.is_file():
-        raise DotfigError(f"no stored copy at {stored}; nothing to diff")
-    if not dest.exists():
-        raise DotfigError(f"{dest} does not exist; nothing to diff")
-    if not dest.is_file():
-        raise DotfigError(f"{dest} is not a file; nothing to diff")
-    if core.contents_equal(stored, dest):
-        console.print(f"{dest} matches the stored copy", soft_wrap=True)
+    store, host = core.restore_paths(cfg, entry.store)
+    if not store.is_file():
+        raise DotfigError(f"no stored copy at {store}; nothing to diff")
+    if not host.exists():
+        raise DotfigError(f"{host} does not exist; nothing to diff")
+    if not host.is_file():
+        raise DotfigError(f"{host} is not a file; nothing to diff")
+    if core.contents_equal(store, host):
+        console.print(f"{host} matches the stored copy", soft_wrap=True)
         return
-    _print_diff(stored, dest)
+    _print_diff(store, host)
 
 
 @cli.command()
@@ -287,9 +286,9 @@ def store(file: Path, *, force: bool) -> None:
     """Store FILE under the dotfig root and link it back."""
     cfg = Config.load()
     if force and not core.inside_root(cfg, file):
-        stored = core.stored_path(cfg, file)
-        if _store_conflicts(stored, file):
-            _confirm_overwrite(target=file, current=stored)
+        store = core.store_path(cfg, file)
+        if _store_conflicts(store, file):
+            _confirm_overwrite(target=file, current=store)
     console.print(core.store(cfg, file, force=force))
 
 
@@ -305,12 +304,12 @@ def store(file: Path, *, force: bool) -> None:
     "--diff",
     "show_diff",
     is_flag=True,
-    help="Show a diff when the destination differs from the stored copy.",
+    help="Show a diff when the host path differs from the stored copy.",
 )
 @click.option(
     "--force",
     is_flag=True,
-    help="Overwrite a differing destination with the stored copy.",
+    help="Overwrite a differing host path with the stored copy.",
 )
 @_handle_errors
 def restore(
@@ -327,26 +326,26 @@ def restore(
     cfg = Config.load()
     entry = core.find_entry(core.list_managed(cfg), entry_id)
     if show_diff:
-        _show_diff(cfg, entry.stored)
+        _show_diff(cfg, entry.store)
     if force and not dry_run:
-        stored, dest = core.restore_paths(cfg, entry.stored)
-        if stored.is_file() and core.restore_conflict(stored, dest):
-            _confirm_overwrite(target=stored, current=dest)
-    console.print(core.restore(cfg, entry.stored, dry_run=dry_run, force=force))
+        store, host = core.restore_paths(cfg, entry.store)
+        if store.is_file() and core.restore_conflict(store, host):
+            _confirm_overwrite(target=store, current=host)
+    console.print(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
 
 
-def _store_conflicts(stored: Path, file: Path) -> bool:
+def _store_conflicts(store: Path, file: Path) -> bool:
     return (
-        stored.is_file()
+        store.is_file()
         and file.is_file()
-        and not core.contents_equal(stored, file)
+        and not core.contents_equal(store, file)
     )
 
 
 def _show_diff(cfg: Config, file: Path) -> None:
-    stored, dest = core.restore_paths(cfg, file)
-    if stored.is_file() and core.restore_conflict(stored, dest):
-        _print_diff(stored, dest)
+    store, host = core.restore_paths(cfg, file)
+    if store.is_file() and core.restore_conflict(store, host):
+        _print_diff(store, host)
 
 
 def _can_use_tui() -> bool:

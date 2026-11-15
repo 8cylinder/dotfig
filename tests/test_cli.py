@@ -209,7 +209,7 @@ def test_restore_diff_opens_viewer(
     assert len(diff_viewer) == 1
 
 
-def test_diff_shows_stored_and_destination(
+def test_diff_shows_store_and_host(
     home: Path, diff_viewer: list[tuple[Path, Path]]
 ) -> None:
     root = home / "tree"
@@ -239,7 +239,7 @@ def test_diff_reports_matching_files(
     assert diff_viewer == []
 
 
-def test_diff_missing_destination_fails(home: Path) -> None:
+def test_diff_missing_host_fails(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     (root / ".bashrc").write_text("stored\n")
@@ -468,7 +468,7 @@ def test_list_empty_root(home: Path) -> None:
     assert "no stored config files" in output(result)
 
 
-def test_list_shows_source_and_destination(home: Path) -> None:
+def test_list_shows_store_and_host(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     config = home / ".bashrc"
@@ -479,8 +479,8 @@ def test_list_shows_source_and_destination(home: Path) -> None:
     assert listed.exit_code == 0, output(listed)
     text = output(listed)
     assert "id" in text
-    assert "source" in text
-    assert "destination" in text
+    assert "store" in text
+    assert "host" in text
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "linked" in text

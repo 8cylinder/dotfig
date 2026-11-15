@@ -14,15 +14,15 @@ def make_file(path: Path, content: str = "hello") -> Path:
     return path
 
 
-def test_stored_path_mirrors_home(cfg: Config, home: Path) -> None:
+def test_store_path_mirrors_home(cfg: Config, home: Path) -> None:
     file = home / ".config" / "app" / "conf"
-    assert core.stored_path(cfg, file) == cfg.root / ".config" / "app" / "conf"
+    assert core.store_path(cfg, file) == cfg.root / ".config" / "app" / "conf"
 
 
-def test_stored_path_outside_home_raises(cfg: Config, tmp_path: Path) -> None:
+def test_store_path_outside_home_raises(cfg: Config, tmp_path: Path) -> None:
     outside = tmp_path.parent / "elsewhere" / "file"
     with pytest.raises(DotfigError, match="outside"):
-        core.stored_path(cfg, outside, home=tmp_path)
+        core.store_path(cfg, outside, home=tmp_path)
 
 
 def test_store_moves_file_and_links(cfg: Config, home: Path) -> None:
@@ -119,23 +119,23 @@ def test_store_root_dir_raises(cfg: Config, home: Path) -> None:
     assert str(home) in str(excinfo.value)
 
 
-def test_resolve_stored_relative_to_root(cfg: Config) -> None:
-    assert core.resolve_stored(cfg, Path(".config") / "app" / "conf") == (
+def test_resolve_store_relative_to_root(cfg: Config) -> None:
+    assert core.resolve_store(cfg, Path(".config") / "app" / "conf") == (
         cfg.root / ".config" / "app" / "conf"
     )
 
 
-def test_resolve_stored_absolute_inside_root(cfg: Config) -> None:
-    stored = cfg.root / ".bashrc"
-    assert core.resolve_stored(cfg, stored) == stored
+def test_resolve_store_absolute_inside_root(cfg: Config) -> None:
+    store = cfg.root / ".bashrc"
+    assert core.resolve_store(cfg, store) == store
 
 
-def test_resolve_stored_outside_root_raises(cfg: Config) -> None:
+def test_resolve_store_outside_root_raises(cfg: Config) -> None:
     with pytest.raises(DotfigError, match="inside the dotfig root"):
-        core.resolve_stored(cfg, Path("..") / "escape")
+        core.resolve_store(cfg, Path("..") / "escape")
 
 
-def test_restore_missing_source_creates_link(cfg: Config, home: Path) -> None:
+def test_restore_missing_host_creates_link(cfg: Config, home: Path) -> None:
     make_file(cfg.root / ".config" / "app" / "conf", "data")
     core.restore(cfg, Path(".config") / "app" / "conf")
     file = home / ".config" / "app" / "conf"
@@ -231,14 +231,14 @@ def test_restore_force_dry_run_foreign_symlink(cfg: Config, home: Path) -> None:
     assert file.readlink() == target
 
 
-def test_restore_directory_destination_raises(cfg: Config, home: Path) -> None:
+def test_restore_directory_host_raises(cfg: Config, home: Path) -> None:
     make_file(cfg.root / ".config", "stored")
     (home / ".config").mkdir()
     with pytest.raises(DotfigError, match="directory"):
         core.restore(cfg, Path(".config"))
 
 
-def test_restore_dry_run_missing_destination(cfg: Config, home: Path) -> None:
+def test_restore_dry_run_missing_host(cfg: Config, home: Path) -> None:
     make_file(cfg.root / ".config" / "app" / "conf", "data")
     report = core.restore(cfg, Path(".config") / "app" / "conf", dry_run=True)
     assert "exists: no" in report
@@ -317,7 +317,7 @@ def test_list_managed_skips_git_and_reports_status(
     make_file(home / ".gemrc")
     make_file(cfg.root / ".vimrc")
     entries = core.list_managed(cfg)
-    assert [(entry.source.name, entry.status) for entry in entries] == [
+    assert [(entry.host.name, entry.status) for entry in entries] == [
         (".bashrc", "linked"),
         (".gemrc", "not linked"),
         (".vimrc", "missing"),
@@ -337,8 +337,8 @@ def test_display_path_uses_home_tilde(cfg: Config, home: Path) -> None:
     assert core.display_path(home, stored) == (
         f"~/{cfg.root.name}/.config/app/conf"
     )
-    source = home / ".config" / "app" / "conf"
-    assert core.display_path(home, source) == "~/.config/app/conf"
+    host = home / ".config" / "app" / "conf"
+    assert core.display_path(home, host) == "~/.config/app/conf"
     assert core.display_path(home, home / "elsewhere") == "~/elsewhere"
 
 
@@ -377,8 +377,8 @@ def test_find_entry_resolves_ids(cfg: Config) -> None:
     make_file(cfg.root / ".vimrc")
     entries = core.list_managed(cfg)
 
-    assert core.find_entry(entries, "a").source.name == ".bashrc"
-    assert core.find_entry(entries, "B").source.name == ".vimrc"
+    assert core.find_entry(entries, "a").host.name == ".bashrc"
+    assert core.find_entry(entries, "B").host.name == ".vimrc"
 
 
 def test_find_entry_unknown_id_raises(cfg: Config) -> None:

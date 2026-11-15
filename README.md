@@ -4,8 +4,8 @@
 
 Manage individual config files with a git-friendly tree. `dotfig` stores files
 under a root directory that mirrors their path in `$HOME`, then replaces each
-source file with a symlink to the stored copy. Commit the root to git and check
-it out on other machines to sync your configs.
+file in `$HOME` with a symlink to the stored copy. Commit the root to git and
+check it out on other machines to sync your configs.
 
 ## Requirements
 
@@ -90,15 +90,15 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with four columns: `id`, `source` (the stored path in the
-root), `destination` (the mirrored path under `$HOME`), and the link status:
-`linked`, `not linked`, `missing`, or `wrong link -> <target>`. The `id` column
-assigns lowercase IDs from the current sorted list order: `a` through `z`, then
-`aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
-run, so adding or removing a stored file can shift later IDs. Paths under
-`$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
-shared trailing path components appear in cyan in both columns. The `.git`
-directory is skipped so the root can itself be a git repo.
+List every stored file with four columns: `id`, `store` (the stored path in the
+root), `host` (the mirrored path under `$HOME`), and the link status: `linked`,
+`not linked`, `missing`, or `wrong link -> <target>`. The `id` column assigns
+lowercase IDs from the current sorted list order: `a` through `z`, then `aa`,
+`ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each run,
+so adding or removing a stored file can shift later IDs. Paths under `$HOME` are
+shown with a leading `~`; paths outside it are shown absolute. The shared
+trailing path components appear in cyan in both columns. The `.git` directory
+is skipped so the root can itself be a git repo.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
@@ -108,14 +108,14 @@ Running `dotfig` with no arguments is equivalent to `dotfig list`.
 dotfig diff ID
 ```
 
-Show the difference between the entry with `ID` and its destination under
+Show the difference between the entry with `ID` and its host path under
 `$HOME`. `ID` is the identifier shown by `dotfig list`; it is case-insensitive.
-This is the same view that `restore --diff` opens: the destination is the
+This is the same view that `restore --diff` opens: the host path is the
 original side and the stored copy is the modified side. It uses
 [gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
 gdiff is not installed, and needs an interactive terminal.
 
-If the destination is missing or is not a file, the command fails. If the
+If the host path is missing or is not a file, the command fails. If the
 contents match, it reports that and does not open the viewer.
 
 ### store
@@ -146,7 +146,7 @@ dotfig restore ID
 Recreate a stored file's symlink in `$HOME`. `ID` is the identifier shown by
 `dotfig list`; it is case-insensitive. Paths are no longer accepted, so run
 `dotfig list` first if you don't know the ID. The mirrored path under `$HOME` is
-the destination, and its parent directories are created if needed.
+the host path, and its parent directories are created if needed.
 
 ```sh
 dotfig list
@@ -154,14 +154,14 @@ dotfig restore b
 ```
 
 Pass `-d` / `--dry-run` to inspect without touching the filesystem. It prints
-the destination path, whether it exists, whether it matches the stored copy,
-and whether a symlink would be created (or why not).
+the host path, whether it exists, whether it matches the stored copy, and
+whether a symlink would be created (or why not).
 
-- If the destination is missing: create parent dirs and symlink it to the
+- If the host path is missing: create parent dirs and symlink it to the
   stored copy.
-- If the destination is a regular file with identical contents: rename it to
+- If the host path is a regular file with identical contents: rename it to
   `<name>.BAK`, then symlink it to the stored copy.
-- If the destination is a regular file with different contents: warn and change
+- If the host path is a regular file with different contents: warn and change
   nothing. Pass `--diff` to show the difference with
   [gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
   gdiff is not installed. Pass `--force` to back the file up to `<name>.BAK`
@@ -170,7 +170,7 @@ and whether a symlink would be created (or why not).
   be asked again. The gdiff viewer starts in side-by-side mode; `space` toggles
   split/unified, `A` toggles annotations, and `q` quits. Showing a diff needs an
   interactive terminal; otherwise dotfig reports an error.
-- If the destination is a foreign symlink: error. Pass `--force` to back the
+- If the host path is a foreign symlink: error. Pass `--force` to back the
   link up to `<name>.BAK` and replace it with a link to the stored copy (with
   the same confirmation prompt). If it already points at the root: no-op.
 - If there is no stored copy: error (`nothing to restore`).
