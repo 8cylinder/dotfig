@@ -1,0 +1,130 @@
+#+TITLE: Bitwarden-backed placeholders
+#+STATUS: proposed
+#+DATE: 2026-11-17
+
+* Summary
+
+Add Bitwarden-backed placeholders to dotfig. A stored file can contain
+placeholders such as:
+
+#+begin_src text
+api_key=[bw:item/field]
+#+end_src
+
+When the file is restored, dotfig resolves each placeholder through the
+=Bitwarden CLI= (=bw=) and writes the hydrated value to the host copy. The
+stored copy keeps the placeholder so secrets are not committed to git.
+
+This plan builds on the copy-based store/host model.
+
+* Placeholder syntax
+
+- =[bw:item/field]= resolves a named item and field.
+- =[bw:item]= defaults to the item's password.
+- Supported field names:
+  - =password=
+  - =username=
+  - =notes=
+  - =totp=
+  - =uri=
+  - Any other name is looked up in the item's custom fields.
+- Every placeholder occurrence in the file is replaced during =restore=.
+- Substitution happens on bytes, so dotfig does not assume a text encoding.
+
+* New module: =bitwarden.py=
+
+- Detect placeholders and parse =item/field=.
+- Use =bw get item ITEM= and parse its JSON.
+- Cache each item per command so repeated placeholders do not repeat the call.
+- Check =bw status= once before resolving:
+  - missing =bw= -> clear error
+  - =unauthenticated= -> suggest =bw login=
+  - =locked= -> suggest =bw unlock= and =BW_SESSION=
+- Never print secret values in messages or errors.
+- Use =subprocess.run= without a shell.
+- Keep item JSON in memory only for the current operation.
+- Do not include =bw= stdout in error messages because it can contain secrets.
+
+* Restore behavior
+
+- If the stored file has no placeholders, keep the current copy behavior.
+- If the stored file has placeholders:
+  1. Resolve the placeholders.
+  2. Render the hydrated content to a temporary file in the host directory.
+  3. Apply the normal conflict rules against the rendered content:
+     - missing host path -> create parent directories and install the file
+     - identical regular file -> no-op
+     - differing regular file -> error unless =--force=
+     - =--force= -> back up to =<name>.BAK=, then replace
+     - host directory -> error
+     - host symlink -> refuse
+  4. Atomically replace the host file with the rendered temporary file.
+- =diff= and =restore --diff= for templated files render to a secure temporary
+  file and diff that against the host.
+
+* Store behavior with reverse-hydration
+
+If the existing store file contains placeholders:
+
+1. Resolve every placeholder to its current Bitwarden value.
+2. Replace those values in the host file with their placeholders, longest value
+   first.
+3. Apply the normal conflict rules to the re-templated content, so an unchanged
+   hydrated file becomes a no-op.
+4. Only the re-templated content is written to the store.
+
+Safety rules:
+
+- If two placeholders resolve to the same value, error rather than guess.
+- If a placeholder resolves to an empty value, error.
+- If a resolved value does not appear in the host file, error rather than risk
+  copying a changed secret in plaintext.
+- If there is no existing store template, =store= copies the host file as-is.
+  New files must be created with placeholders before their first =store=.
+
+* List behavior
+
+- Add a third status: =◆= for a regular host file whose store copy contains
+  placeholders.
+- =◆= means "template file; comparison skipped" and does not call =bw=, so
+  =list= stays fast and works while the vault is locked.
+- Missing, symlinked, or directory host paths still show =✗=.
+- Interactive table: =◆= in cyan.
+- Pipe output: the status field is =◆=.
+
+* Tests
+
+- Add a fake =bw= executable in tests for resolver integration.
+- Cover:
+  - password and custom-field extraction
+  - multiple placeholders and repeated placeholders
+  - missing =bw=, locked vault, missing item, missing field
+  - restore hydration and atomic replacement
+  - =--force= conflict behavior with rendered content
+  - reverse-hydration and its safety errors
+  - =list= showing =◆= without invoking =bw=
+  - =diff= comparing rendered content
+- Note: =bw= is not installed in this environment, so verification uses a stub
+  executable.
+
+* Documentation
+
+- Update =README.md= with placeholder syntax, field names, hydration behavior,
+  reverse-hydration rules, and the =◆= list status.
+- Update =GLOSSARY.md= with terms for template, hydration, and Bitwarden
+  placeholder.
+- Add an ADR for the template/secret model.
+
+* Implementation order
+
+1. Add =bitwarden.py= with placeholder parsing, resolution, caching, and errors.
+2. Add template detection and rendered-copy helpers.
+3. Update =restore= and =diff= to hydrate templates.
+4. Update =store= for reverse-hydration.
+5. Update =list= and the CLI status rendering.
+6. Add tests with a stub =bw=.
+7. Update README, glossary, and ADR.
+
+* Open assumption
+
+- Use =◆= as the template status symbol unless a different symbol is preferred.
