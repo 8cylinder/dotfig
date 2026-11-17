@@ -18,12 +18,22 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     assert Config.load(path=path).root == root
 
 
+def test_save_and_load_round_trip_with_diff_tool(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    path = tmp_path / "config"
+    Config(root=root, diff_tool="diffuse").save(path=path)
+    loaded = Config.load(path=path)
+    assert loaded.root == root
+    assert loaded.diff_tool == "diffuse"
+
+
 def test_save_writes_toml_with_mode_comment(tmp_path: Path) -> None:
     path = tmp_path / "config"
     Config(root=tmp_path / "root").save(path=path)
     text = path.read_text()
     assert text.startswith("# -*- mode: toml -*-\n")
     assert "root = " in text
+    assert "diff_tool" not in text
 
 
 def test_save_escapes_quotes_and_backslashes(tmp_path: Path) -> None:
@@ -50,6 +60,26 @@ def test_load_without_root_raises(tmp_path: Path) -> None:
     path = tmp_path / "config"
     path.write_text('other = "x"\n')
     with pytest.raises(DotfigError, match="'root'"):
+        Config.load(path=path)
+
+
+def test_load_without_diff_tool_defaults_to_none(tmp_path: Path) -> None:
+    path = tmp_path / "config"
+    path.write_text(f'root = "{tmp_path / "root"}"\n')
+    assert Config.load(path=path).diff_tool is None
+
+
+def test_load_invalid_diff_tool_raises(tmp_path: Path) -> None:
+    path = tmp_path / "config"
+    path.write_text(f'root = "{tmp_path / "root"}"\ndiff_tool = 1\n')
+    with pytest.raises(DotfigError, match="'diff_tool'"):
+        Config.load(path=path)
+
+
+def test_load_empty_diff_tool_raises(tmp_path: Path) -> None:
+    path = tmp_path / "config"
+    path.write_text(f'root = "{tmp_path / "root"}"\ndiff_tool = "  "\n')
+    with pytest.raises(DotfigError, match="'diff_tool'"):
         Config.load(path=path)
 
 

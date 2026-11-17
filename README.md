@@ -12,9 +12,8 @@ machines to sync your configs.
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) (recommended)
 - `make` for the development commands
-- [gdiff](https://github.com/8cylinder/gdiff) on `PATH` for the interactive
-  diff viewer. Without it, dotfig falls back to the standard `diff -u`
-  command.
+- An optional external diff viewer on `PATH` for `dotfig diff` and the `d`
+  prompt. Set `diff_tool` in the config; without it, dotfig uses `diff -u`.
 
 ## Download and build
 
@@ -123,9 +122,9 @@ dotfig diff ID
 Show the difference between the entry with `ID` and its host path under
 `$HOME`. `ID` is the identifier shown by `dotfig list`; it is case-insensitive.
 This is the same view that `restore --diff` opens: the host path is the
-original side and the stored copy is the modified side. It uses
-[gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
-gdiff is not installed, and needs an interactive terminal.
+original side and the stored copy is the modified side. It uses the `diff_tool`
+from the config, falling back to `diff -u` when the field is unset or the tool
+is not on `PATH`, and needs an interactive terminal.
 
 If the host path is missing or is not a file, the command fails. If the
 contents match, it reports that and does not open the viewer.
@@ -134,10 +133,13 @@ contents match, it reports that and does not open the viewer.
 
 ```sh
 dotfig store FILE
+dotfig store ID
 ```
 
 Copy `FILE` into the root, mirroring its `$HOME` path. `FILE` stays in place as
-a regular file; `dotfig` never creates symlinks.
+a regular file; `dotfig` never creates symlinks. If the file is already stored,
+`ID` from `dotfig list` (case-insensitive) can be passed instead of its path;
+paths take precedence when the argument names an existing file.
 
 - If `FILE` is a symlink: error and point at `dotfig break`.
 - If a stored copy exists with the same contents: report it and do nothing.
@@ -173,14 +175,12 @@ whether a copy would be made (or why not).
 - If the host path is a regular file with identical contents: report that it is
   already restored and change nothing.
 - If the host path is a regular file with different contents: warn and change
-  nothing. Pass `--diff` to show the difference with
-  [gdiff](https://github.com/8cylinder/gdiff), falling back to `diff -u` when
-  gdiff is not installed. Pass `--force` to back the file up to `<name>.BAK`
-  and replace it with the stored copy. `--force` asks for confirmation
-  (`Continue? [y/N/(d)iff]`) before overwriting; answer `d` to show the diff and
-  be asked again. The gdiff viewer starts in side-by-side mode; `space` toggles
-  split/unified, `A` toggles annotations, and `q` quits. Showing a diff needs an
-  interactive terminal; otherwise dotfig reports an error.
+  nothing. Pass `--diff` to show the difference with the configured
+  `diff_tool`, falling back to `diff -u` when it is unset or not on `PATH`. Pass
+  `--force` to back the file up to `<name>.BAK` and replace it with the stored
+  copy. `--force` asks for confirmation (`Continue? [y/N/(d)iff]`) before
+  overwriting; answer `d` to show the diff and be asked again. Showing a diff
+  needs an interactive terminal; otherwise dotfig reports an error.
 - If the host path is a symlink: error, even with `--force`. Run
   `dotfig break ID` first to turn the link into a regular copy.
 - If the host path is a directory: error.
@@ -206,12 +206,17 @@ The config is TOML in the platform's user config directory:
 - Windows: `%APPDATA%\dotfig\config.toml`
 
 Run `dotfig --config` to print the resolved path. The file stores the root
-location:
+location and optionally the diff viewer:
 
 ```toml
 # -*- mode: toml -*-
 root = "/home/you/dotfiles"
+diff_tool = "diffuse"
 ```
+
+`diff_tool` names an executable on `PATH`. dotfig runs it with the original and
+modified file paths. When the field is absent or the executable is not on
+`PATH`, dotfig falls back to `diff -u`.
 
 `~` and environment variables are expanded when the config is loaded. Older
 versions stored the config at `$HOME/.dotfig`; that path is no longer read, so
@@ -242,5 +247,5 @@ Layout:
 - `src/dotfig/cli.py` -- click + rich commands and global options
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
 - `src/dotfig/config.py` -- platform config path and TOML load/save
-- `src/dotfig/diffview.py` -- diff viewer backed by gdiff, with `diff -u` fallback
+- `src/dotfig/diffview.py` -- configured diff viewer with `diff -u` fallback
 - `tests/` -- pytest suite

@@ -34,19 +34,23 @@ def fake_run(
     return calls
 
 
-def test_show_diff_uses_gdiff(
+def test_show_diff_uses_configured_tool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original, modified = make_pair(tmp_path)
     calls = fake_run(monkeypatch, 0)
-    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/gdiff")
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diffuse" if name == "diffuse" else None,
+    )
 
-    diffview.show_diff(original, modified)
+    diffview.show_diff(original, modified, tool="diffuse")
 
-    assert calls == [["/usr/bin/gdiff", str(original), str(modified)]]
+    assert calls == [["/usr/bin/diffuse", str(original), str(modified)]]
 
 
-def test_show_diff_falls_back_when_gdiff_missing(
+def test_show_diff_falls_back_without_configured_tool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original, modified = make_pair(tmp_path)
@@ -62,6 +66,22 @@ def test_show_diff_falls_back_when_gdiff_missing(
     assert calls == [["/usr/bin/diff", "-u", str(original), str(modified)]]
 
 
+def test_show_diff_falls_back_when_configured_tool_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    calls = fake_run(monkeypatch, 1)
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diff" if name == "diff" else None,
+    )
+
+    diffview.show_diff(original, modified, tool="diffuse")
+
+    assert calls == [["/usr/bin/diff", "-u", str(original), str(modified)]]
+
+
 def test_show_diff_raises_when_no_tool_is_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -72,15 +92,29 @@ def test_show_diff_raises_when_no_tool_is_available(
         diffview.show_diff(original, modified)
 
 
-def test_show_diff_raises_when_gdiff_fails(
+def test_show_diff_raises_when_no_tool_or_diff_is_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: None)
+
+    with pytest.raises(DotfigError, match="diff_tool 'diffuse'"):
+        diffview.show_diff(original, modified, tool="diffuse")
+
+
+def test_show_diff_raises_when_configured_tool_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original, modified = make_pair(tmp_path)
     fake_run(monkeypatch, 2)
-    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/gdiff")
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diffuse" if name == "diffuse" else None,
+    )
 
-    with pytest.raises(DotfigError, match="gdiff exited with status 2"):
-        diffview.show_diff(original, modified)
+    with pytest.raises(DotfigError, match="diffuse exited with status 2"):
+        diffview.show_diff(original, modified, tool="diffuse")
 
 
 def test_show_diff_raises_when_diff_fails(
@@ -107,8 +141,12 @@ def test_show_diff_resolves_symlinks(
     link.symlink_to(target)
     _, modified = make_pair(tmp_path)
     calls = fake_run(monkeypatch, 0)
-    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/gdiff")
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diffuse" if name == "diffuse" else None,
+    )
 
-    diffview.show_diff(link, modified)
+    diffview.show_diff(link, modified, tool="diffuse")
 
-    assert calls == [["/usr/bin/gdiff", str(target), str(modified)]]
+    assert calls == [["/usr/bin/diffuse", str(target), str(modified)]]

@@ -38,7 +38,9 @@ def diff_viewer(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Path, Path]]:
     """
     calls: list[tuple[Path, Path]] = []
 
-    def fake_show_diff(original: Path, modified: Path) -> None:
+    def fake_show_diff(
+        original: Path, modified: Path, *, tool: str | None = None
+    ) -> None:
         calls.append((original, modified))
 
     module = importlib.import_module("dotfig.cli")

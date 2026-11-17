@@ -287,11 +287,11 @@ def diff(entry_id: str) -> None:
     if core.contents_equal(store, host):
         console.print(f"{host} matches the stored copy", soft_wrap=True)
         return
-    _print_diff(store, host)
+    _print_diff(cfg, store, host)
 
 
 @cli.command()
-@click.argument("file", type=click.Path(path_type=Path))
+@click.argument("file", metavar="FILE|ID", type=click.Path(path_type=Path))
 @click.option(
     "--force",
     is_flag=True,
@@ -299,13 +299,33 @@ def diff(entry_id: str) -> None:
 )
 @_handle_errors
 def store(file: Path, *, force: bool) -> None:
-    """Store FILE under the dotfig root and link it back."""
+    """Store FILE under the dotfig root and link it back.
+
+    FILE may also be the ID of a file that is already stored.
+    """
     cfg = Config.load()
+    file = _resolve_store_target(cfg, file)
     if force and not core.inside_root(cfg, file):
         store = core.store_path(cfg, file)
         if _store_conflicts(store, file):
-            _confirm_overwrite(target=file, current=store)
+            _confirm_overwrite(cfg, target=file, current=store)
     console.print(core.store(cfg, file, force=force))
+
+
+def _resolve_store_target(cfg: Config, file: Path) -> Path:
+    """Resolve FILE to a host path, accepting a list ID.
+
+    Returns:
+        FILE unchanged when it names an existing path, the host path of the
+        entry whose list ID is FILE when one matches, or FILE otherwise.
+
+    """
+    if file.exists() or file.is_symlink() or not cfg.root.is_dir():
+        return file
+    try:
+        return core.find_entry(core.list_managed(cfg), str(file)).host
+    except DotfigError:
+        return file
 
 
 @cli.command()
@@ -346,7 +366,7 @@ def restore(
     if force and not dry_run:
         store, host = core.restore_paths(cfg, entry.store)
         if store.is_file() and core.restore_conflict(store, host):
-            _confirm_overwrite(target=store, current=host)
+            _confirm_overwrite(cfg, target=store, current=host)
     console.print(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
 
 
@@ -376,7 +396,7 @@ def _show_diff(cfg: Config, file: Path) -> None:
         and host.is_file()
         and not core.contents_equal(store, host)
     ):
-        _print_diff(store, host)
+        _print_diff(cfg, store, host)
 
 
 def _stdout_is_tty() -> bool:
@@ -387,7 +407,7 @@ def _can_use_tui() -> bool:
     return all((sys.stdin.isatty(), sys.stdout.isatty()))
 
 
-def _print_diff(target: Path, current: Path) -> None:
+def _print_diff(cfg: Config, target: Path, current: Path) -> None:
     """Show the difference between CURRENT and TARGET.
 
     Raises:
@@ -397,10 +417,10 @@ def _print_diff(target: Path, current: Path) -> None:
     """
     if not _can_use_tui():
         raise DotfigError("showing a diff requires an interactive terminal")
-    show_diff(current, target)
+    show_diff(current, target, tool=cfg.diff_tool)
 
 
-def _confirm_overwrite(*, target: Path, current: Path) -> None:
+def _confirm_overwrite(cfg: Config, *, target: Path, current: Path) -> None:
     while True:
         answer = str(
             click.prompt(
@@ -413,7 +433,7 @@ def _confirm_overwrite(*, target: Path, current: Path) -> None:
             )
         ).lower()
         if answer == "d":
-            _print_diff(target, current)
+            _print_diff(cfg, target, current)
             continue
         if answer == "y":
             return

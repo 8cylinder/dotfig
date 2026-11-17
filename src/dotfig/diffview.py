@@ -1,4 +1,4 @@
-"""Show file differences with gdiff, falling back to plain diff."""
+"""Show file differences with a configured tool, falling back to plain diff."""
 
 from __future__ import annotations
 
@@ -22,32 +22,38 @@ def _diff_path(path: Path) -> Path:
     return path.resolve() if path.is_symlink() else path
 
 
-def show_diff(original: Path, modified: Path) -> None:
-    """Display ORIGINAL and MODIFIED in gdiff, or plain diff without gdiff.
+def show_diff(
+    original: Path, modified: Path, *, tool: str | None = None
+) -> None:
+    """Display ORIGINAL and MODIFIED with TOOL, or plain diff without it.
 
     Raises:
-        DotfigError: If neither gdiff nor diff is available, or the tool fails.
+        DotfigError: If no diff command is available, or the tool fails.
 
     """
     original = _diff_path(original)
     modified = _diff_path(modified)
 
-    gdiff = shutil.which("gdiff")
-    if gdiff is not None:
-        completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-            [gdiff, str(original), str(modified)],
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise DotfigError(
-                f"gdiff exited with status {completed.returncode}"
+    if tool:
+        executable = shutil.which(tool)
+        if executable is not None:
+            completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+                [executable, str(original), str(modified)],
+                check=False,
             )
-        return
+            if completed.returncode != 0:
+                raise DotfigError(
+                    f"{tool} exited with status {completed.returncode}"
+                )
+            return
 
     diff = shutil.which("diff")
     if diff is None:
+        if tool is None:
+            raise DotfigError("no diff command was found on PATH")
         raise DotfigError(
-            "gdiff is not installed and no diff command was found on PATH"
+            f"no diff command was found on PATH (configured diff_tool "
+            f"{tool!r} is not installed)"
         )
     completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
         [diff, "-u", str(original), str(modified)],

@@ -10,7 +10,7 @@ from click.testing import CliRunner, Result
 from rich.console import Console
 
 from dotfig.cli import _color_common, _print_diff, cli
-from dotfig.config import config_path
+from dotfig.config import Config, config_path
 
 if TYPE_CHECKING:
     import pytest
@@ -45,16 +45,40 @@ def test_color_common_leaves_other_paths_alone() -> None:
 
 
 def test_print_diff_opens_viewer(
-    tmp_path: Path, diff_viewer: list[tuple[Path, Path]]
+    cfg: Config, tmp_path: Path, diff_viewer: list[tuple[Path, Path]]
 ) -> None:
     target = tmp_path / "target"
     current = tmp_path / "current"
     target.write_text("new\n")
     current.write_text("old\n")
 
-    _print_diff(target, current)
+    _print_diff(cfg, target, current)
 
     assert diff_viewer == [(current, target)]
+
+
+def test_print_diff_passes_configured_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target"
+    current = tmp_path / "current"
+    target.write_text("new\n")
+    current.write_text("old\n")
+    calls: list[tuple[Path, Path, str | None]] = []
+
+    def fake_show_diff(
+        original: Path, modified: Path, *, tool: str | None = None
+    ) -> None:
+        calls.append((original, modified, tool))
+
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "show_diff", fake_show_diff)
+    monkeypatch.setattr(module, "_can_use_tui", lambda: True)
+    cfg = Config(root=tmp_path / "root", diff_tool="diffuse")
+
+    _print_diff(cfg, target, current)
+
+    assert calls == [(current, target, "diffuse")]
 
 
 def test_init_creates_root_and_config(home: Path) -> None:
@@ -97,6 +121,52 @@ def test_store_list_restore_flow(home: Path) -> None:
     assert restored.exit_code == 0, output(restored)
     assert not config.is_symlink()
     assert config.read_text() == "export X=1"
+
+
+def test_store_accepts_id_for_stored_file(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("export X=1")
+    assert run(["store", str(config)]).exit_code == 0
+
+    result = run(["store", "a"])
+    assert result.exit_code == 0, output(result)
+    assert "already stored" in output(result)
+    assert (root / ".bashrc").read_text() == "export X=1"
+
+
+def test_store_id_force_updates_stored_copy(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("old\n")
+    assert run(["store", str(config)]).exit_code == 0
+    config.write_text("new\n")
+
+    result = run(["store", "a", "--force"], "y\n")
+    assert result.exit_code == 0, output(result)
+    assert "This will overwrite" in output(result)
+    assert (root / ".bashrc").read_text() == "new\n"
+    assert (root / ".bashrc.BAK").read_text() == "old\n"
+
+
+def test_store_prefers_existing_path_over_id(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("stored\n")
+    assert run(["store", str(config)]).exit_code == 0
+    monkeypatch.chdir(home)
+    named_like_id = home / "a"
+    named_like_id.write_text("local\n")
+
+    result = run(["store", "a"])
+    assert result.exit_code == 0, output(result)
+    assert (root / "a").read_text() == "local\n"
+    assert (root / ".bashrc").read_text() == "stored\n"
 
 
 def test_store_conflict_exits_nonzero(home: Path) -> None:
@@ -251,6 +321,33 @@ def test_diff_shows_store_and_host(
     result = run(["diff", "a"])
     assert result.exit_code == 0, output(result)
     assert diff_viewer == [(config, stored)]
+
+
+def test_diff_uses_configured_tool(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    with config_path().open("a", encoding="utf-8") as handle:
+        handle.write('diff_tool = "diffuse"\n')
+    calls: list[tuple[Path, Path, str | None]] = []
+
+    def fake_show_diff(
+        original: Path, modified: Path, *, tool: str | None = None
+    ) -> None:
+        calls.append((original, modified, tool))
+
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "show_diff", fake_show_diff)
+    monkeypatch.setattr(module, "_can_use_tui", lambda: True)
+
+    result = run(["diff", "a"])
+    assert result.exit_code == 0, output(result)
+    assert calls == [(config, stored, "diffuse")]
 
 
 def test_diff_reports_matching_files(

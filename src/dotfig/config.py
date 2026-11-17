@@ -32,6 +32,7 @@ class Config:
     """The dotfig root configured for a user."""
 
     root: Path
+    diff_tool: str | None = None
 
     def __post_init__(self) -> None:
         """Normalize the root path and require it to be absolute.
@@ -66,20 +67,27 @@ class Config:
         root = data.get("root")
         if not isinstance(root, str):
             raise DotfigError(f"{path} must contain a 'root' string")
-        return cls(root=Path(root))
+        diff_tool = data.get("diff_tool")
+        if diff_tool is not None and (
+            not isinstance(diff_tool, str) or not diff_tool.strip()
+        ):
+            raise DotfigError(
+                f"{path} must contain a non-empty 'diff_tool' string"
+            )
+        return cls(root=Path(root), diff_tool=diff_tool)
 
     def save(self, path: Path | None = None) -> None:
         """Write the config to disk, creating parent directories."""
         path = path or config_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        text = "\n".join(
-            [
-                "# -*- mode: toml -*-",
-                f"root = {toml_string(str(self.root))}",
-                "",
-            ]
-        )
-        path.write_text(text, encoding="utf-8")
+        lines = [
+            "# -*- mode: toml -*-",
+            f"root = {toml_string(str(self.root))}",
+        ]
+        if self.diff_tool is not None:
+            lines.append(f"diff_tool = {toml_string(self.diff_tool)}")
+        lines.append("")
+        path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def toml_string(value: str) -> str:
