@@ -103,6 +103,16 @@ directory is skipped so the root can itself be a git repo.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
+When output is piped, `dotfig list` prints one row per entry with no header:
+`id`, `store`, `host`, and `status` separated by tabs, without colors. This is
+intended for tools such as `cut`:
+
+```sh
+dotfig list | cut -f1,3
+```
+
+An empty store prints nothing in this mode.
+
 ### diff
 
 ```sh

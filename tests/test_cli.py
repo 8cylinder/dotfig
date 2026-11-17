@@ -519,19 +519,47 @@ def test_break_is_hidden_from_help(home: Path) -> None:
     assert "break" not in output(result)
 
 
-def test_list_empty_root(home: Path) -> None:
+def test_list_empty_root_pipe_is_silent(home: Path) -> None:
     assert run(["init", str(home / "tree")]).exit_code == 0
+    result = run(["list"])
+    assert result.exit_code == 0, output(result)
+    assert not output(result)
+
+
+def test_list_empty_root_terminal_reports_empty(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run(["init", str(home / "tree")]).exit_code == 0
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_stdout_is_tty", lambda: True)
+
     result = run(["list"])
     assert result.exit_code == 0, output(result)
     assert "no stored config files" in output(result)
 
 
-def test_list_shows_store_and_host(home: Path) -> None:
+def test_list_pipe_is_tab_separated(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     config = home / ".bashrc"
     config.write_text("export X=1")
     assert run(["store", str(config)]).exit_code == 0
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    assert listed.output.splitlines() == ["a\t~/tree/.bashrc\t~/.bashrc\t✓"]
+
+
+def test_list_terminal_shows_table(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("export X=1")
+    assert run(["store", str(config)]).exit_code == 0
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_stdout_is_tty", lambda: True)
 
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)

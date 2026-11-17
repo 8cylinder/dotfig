@@ -217,9 +217,24 @@ def list_command() -> None:
     cfg = Config.load()
     entries = core.list_managed(cfg)
     if not entries:
-        console.print("no stored config files")
+        if _stdout_is_tty():
+            console.print("no stored config files")
         return
     home = Path.home()
+    if not _stdout_is_tty():
+        for index, entry in enumerate(entries):
+            symbol = "✓" if entry.matches else "✗"
+            click.echo(
+                "\t".join(
+                    (
+                        core.entry_id(index),
+                        core.display_path(home, entry.store),
+                        core.display_path(home, entry.host),
+                        symbol,
+                    )
+                )
+            )
+        return
     table = Table(
         "id",
         "store",
@@ -357,6 +372,10 @@ def _show_diff(cfg: Config, file: Path) -> None:
         and not core.contents_equal(store, host)
     ):
         _print_diff(store, host)
+
+
+def _stdout_is_tty() -> bool:
+    return bool(sys.stdout.isatty())
 
 
 def _can_use_tui() -> bool:
