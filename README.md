@@ -90,10 +90,10 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with four columns: `id`, `store` (the stored path in the
-root), `host` (the mirrored path under `$HOME`), and the match status: `✓` when
+List every stored file with four columns: `ID`, `Store` (the stored path in the
+root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓` when
 the host path is a regular file with identical contents, `✗` when it differs,
-is missing, is not a regular file, or is still a symlink. The `id` column
+is missing, is not a regular file, or is still a symlink. The `ID` column
 assigns lowercase IDs from the current sorted list order: `a` through `z`, then
 `aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
 run, so adding or removing a stored file can shift later IDs. Paths under

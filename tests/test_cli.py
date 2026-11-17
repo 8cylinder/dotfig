@@ -564,9 +564,10 @@ def test_list_terminal_shows_table(
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
     text = output(listed)
-    assert "id" in text
-    assert "store" in text
-    assert "host" in text
+    assert "ID" in text
+    assert "Store" in text
+    assert "Host" in text
+    assert "Status" in text
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "✓" in text

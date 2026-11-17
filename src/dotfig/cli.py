@@ -236,10 +236,10 @@ def list_command() -> None:
             )
         return
     table = Table(
-        "id",
-        "store",
-        "host",
-        "status",
+        "ID",
+        "Store",
+        "Host",
+        "Status",
         box=box.SIMPLE_HEAD,
         show_edge=False,
         pad_edge=False,
