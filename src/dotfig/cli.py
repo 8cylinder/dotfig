@@ -197,8 +197,8 @@ def init(path: Path, *, force: bool) -> None:
     console.print(f"wrote {cfg_path}")
 
 
-def _color_common(path: str, common: str) -> str:
-    """Escape PATH, rendering its trailing COMMON part in cyan.
+def _color_common(path: str, common: str, color: str = "cyan") -> str:
+    """Escape PATH, rendering its trailing COMMON part in COLOR.
 
     Returns:
         Rich markup for PATH with the shared suffix highlighted.
@@ -207,7 +207,7 @@ def _color_common(path: str, common: str) -> str:
     if not common or not path.endswith(common):
         return escape(path)
     prefix = path[: len(path) - len(common)]
-    return f"{escape(prefix)}[cyan]{escape(common)}[/cyan]"
+    return f"{escape(prefix)}[{color}]{escape(common)}[/{color}]"
 
 
 @cli.command(name="list")
@@ -247,11 +247,16 @@ def list_command() -> None:
     for index, entry in enumerate(entries):
         symbol = "✓" if entry.matches else "✗"
         color = "green" if entry.matches else "red"
+        path_color = "cyan" if entry.matches else "yellow"
         common = str(entry.store.relative_to(cfg.root))
         table.add_row(
             core.entry_id(index),
-            _color_common(core.display_path(home, entry.store), common),
-            _color_common(core.display_path(home, entry.host), common),
+            _color_common(
+                core.display_path(home, entry.store), common, path_color
+            ),
+            _color_common(
+                core.display_path(home, entry.host), common, path_color
+            ),
             f"[{color}]{symbol}[/]",
         )
     console.print(table)

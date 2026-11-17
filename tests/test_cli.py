@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import io
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from click.testing import CliRunner, Result
+from rich.console import Console
 
 from dotfig.cli import _color_common, _print_diff, cli
 from dotfig.config import config_path
@@ -29,6 +31,12 @@ def test_color_common_marks_trailing_shared_path() -> None:
     )
     assert _color_common("~/.config/cm/.env", common) == (
         "~/[cyan].config/cm/.env[/cyan]"
+    )
+
+
+def test_color_common_accepts_another_color() -> None:
+    assert _color_common("~/.config/cm/.env", ".config/cm/.env", "yellow") == (
+        "~/[yellow].config/cm/.env[/yellow]"
     )
 
 
@@ -571,6 +579,31 @@ def test_list_terminal_shows_table(
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "✓" in text
+
+
+def test_list_terminal_colors_differing_paths_yellow(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("stored\n")
+    assert run(["store", str(config)]).exit_code == 0
+    config.write_text("local\n")
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_stdout_is_tty", lambda: True)
+    stream = io.StringIO()
+    monkeypatch.setattr(
+        module,
+        "console",
+        Console(file=stream, force_terminal=True, color_system="standard"),
+    )
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    text = stream.getvalue()
+    assert "\x1b[33m" in text
+    assert "\x1b[36m" not in text
 
 
 def test_restore_rejects_unknown_id(home: Path) -> None:

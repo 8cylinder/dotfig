@@ -98,8 +98,9 @@ assigns lowercase IDs from the current sorted list order: `a` through `z`, then
 `aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
 run, so adding or removing a stored file can shift later IDs. Paths under
 `$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
-shared trailing path components appear in cyan in both columns. The `.git`
-directory is skipped so the root can itself be a git repo.
+shared trailing path components appear in cyan in both columns when the host
+copy matches, and in yellow when it differs. The `.git` directory is skipped so
+the root can itself be a git repo.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
