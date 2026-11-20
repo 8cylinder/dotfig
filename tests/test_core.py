@@ -310,6 +310,7 @@ def test_list_managed_skips_git_and_reports_matches(
     cfg: Config, home: Path
 ) -> None:
     make_file(cfg.root / ".git" / "config")
+    make_file(cfg.root / ".bashrc.BAK", "backup")
     copied = make_file(home / ".bashrc")
     core.store(cfg, copied)
     make_file(cfg.root / ".gemrc", "stored")

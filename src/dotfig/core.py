@@ -418,6 +418,8 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
     for dirpath, dirnames, filenames in os.walk(cfg.root):
         dirnames[:] = sorted(name for name in dirnames if name != ".git")
         for name in sorted(filenames):
+            if name.endswith(".BAK"):
+                continue
             store = Path(dirpath) / name
             host = base / store.relative_to(cfg.root)
             entries.append(

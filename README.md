@@ -99,7 +99,8 @@ run, so adding or removing a stored file can shift later IDs. Paths under
 `$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
 shared trailing path components appear in cyan in both columns when the host
 copy matches, and in yellow when it differs. The `.git` directory is skipped so
-the root can itself be a git repo.
+the root can itself be a git repo, and files whose names end in `.BAK` (backups
+made by `--force`) are not listed.
 
 Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
