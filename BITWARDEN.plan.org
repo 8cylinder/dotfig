@@ -8,7 +8,7 @@ Add Bitwarden-backed placeholders to dotfig. A stored file can contain
 placeholders such as:
 
 #+begin_src text
-api_key=[bw:item/field]
+  api_key=[bw:item/field]
 #+end_src
 
 When the file is restored, dotfig resolves each placeholder through the
