@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from .config import Config, DotfigError
@@ -14,13 +15,29 @@ from .config import Config, DotfigError
 _CHUNK_SIZE = 1024 * 1024
 
 
+class HostState(StrEnum):
+    """How a host path relates to its stored copy."""
+
+    MATCHED = "matched"
+    MISSING = "missing"
+    SYMLINK = "symlink"
+    BROKEN_SYMLINK = "broken symlink"
+    NOT_FILE = "not a file"
+    DIFFERS = "differs"
+
+
 @dataclass(frozen=True)
 class Entry:
-    """A stored file and whether the host copy matches it."""
+    """A stored file and how the host copy relates to it."""
 
     host: Path
     store: Path
-    matches: bool
+    state: HostState
+
+    @property
+    def matches(self) -> bool:
+        """Whether the host copy is a regular file with identical contents."""
+        return self.state is HostState.MATCHED
 
 
 def entry_id(index: int) -> str:
@@ -384,12 +401,26 @@ def break_link(cfg: Config, file: Path, *, home: Path | None = None) -> str:
     return f"broke link at {host}; copied {store}"
 
 
-def _matches(host: Path, store: Path) -> bool:
-    if host.is_symlink() or not host.is_file():
-        return False
-    if not store.is_file():
-        return False
-    return contents_equal(host, store)
+def host_state(host: Path, store: Path) -> HostState:
+    """Classify how HOST relates to the stored copy STORE.
+
+    A symlink is checked first so a broken link is not reported as missing.
+    The stored copy is expected to be a regular file; when it is not, HOST
+    cannot match it.
+
+    Returns:
+        The state of the host path.
+
+    """
+    if host.is_symlink():
+        return HostState.SYMLINK if host.exists() else HostState.BROKEN_SYMLINK
+    if not host.exists():
+        return HostState.MISSING
+    if not host.is_file():
+        return HostState.NOT_FILE
+    if store.is_file() and contents_equal(host, store):
+        return HostState.MATCHED
+    return HostState.DIFFERS
 
 
 def display_path(home: Path, path: Path) -> str:
@@ -412,7 +443,7 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
     """List every file stored under the dotfig root.
 
     Returns:
-        One entry per stored file, with whether the host copy matches.
+        One entry per stored file, with how the host copy relates to it.
 
     Raises:
         DotfigError: If the dotfig root does not exist.
@@ -435,7 +466,7 @@ def list_managed(cfg: Config, *, home: Path | None = None) -> list[Entry]:
                 Entry(
                     host=host,
                     store=store,
-                    matches=_matches(host, store),
+                    state=host_state(host, store),
                 )
             )
     return entries

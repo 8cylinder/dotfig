@@ -688,6 +688,41 @@ def test_list_pipe_is_tab_separated(home: Path) -> None:
     assert listed.output.splitlines() == ["a\t~/tree/.bashrc\t~/.bashrc\t✓"]
 
 
+def test_list_pipe_adds_state_when_a_host_differs(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    changed = home / ".bashrc"
+    changed.write_text("stored")
+    assert run(["store", str(changed)]).exit_code == 0
+    unchanged = home / ".vimrc"
+    unchanged.write_text("same")
+    assert run(["store", str(unchanged)]).exit_code == 0
+    changed.write_text("local")
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    assert listed.output.splitlines() == [
+        "a\t~/tree/.bashrc\t~/.bashrc\t✗\tdiffers",
+        "b\t~/tree/.vimrc\t~/.vimrc\t✓\t-",
+    ]
+
+
+def test_list_terminal_shows_state_for_problems(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".gemrc").write_text("stored")
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_stdout_is_tty", lambda: True)
+
+    listed = run(["list"])
+    assert listed.exit_code == 0, output(listed)
+    text = output(listed)
+    assert "State" in text
+    assert "missing" in text
+
+
 def test_list_terminal_shows_table(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -706,6 +741,7 @@ def test_list_terminal_shows_table(
     assert "Store" in text
     assert "Host" in text
     assert "Status" in text
+    assert "State" not in text
     assert "~/tree/.bashrc" in text
     assert "~/.bashrc" in text
     assert "✓" in text

@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `dotfig list` adds a `State` column when a host file is missing, a live or
+  broken symlink, not a regular file, or different from the stored copy. Piped
+  output gains a fifth field at the same time.
+
 ## [0.3.0] - 2026-11-23
 
 ### Added

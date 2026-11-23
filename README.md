@@ -120,22 +120,28 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with four columns: `ID`, `Store` (the stored path in the
-root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓` when the host
-path is a regular file with identical contents, `✗` when it differs, is
-missing, is not a regular file, or is still a symlink. The `ID` column assigns
-lowercase IDs from the current sorted list order: `a` through `z`, then `aa`,
-`ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each run,
-so adding or removing a stored file can shift later IDs. Paths under `$HOME`
-are shown with a leading `~`; paths outside it are shown absolute. The shared
-trailing path components appear in cyan in both columns when the host copy
-matches, and in yellow when it differs. The `.git` directory is skipped so the
-root can itself be a git repo, and files whose names end in `.BAK` (backups made
-by `--force`) are not listed.
+List every stored file with four columns by default: `ID`, `Store` (the stored
+path in the root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓`
+when the host path is a regular file with identical contents, `✗` when it
+differs, is missing, is not a regular file, or is still a symlink. When any
+entry is `✗`, `list` adds a `State` column saying why: `missing`, `symlink` (a
+live symlink), `broken symlink` (a symlink whose target does not exist),
+`differs` (a regular file with different contents), or `not a file` (a
+directory or other non-regular file). The column is omitted when every entry
+matches. The `ID` column assigns lowercase IDs from the current sorted list
+order: `a` through `z`, then `aa`, `ab`, and so on. Use these IDs with
+`restore`. IDs are recomputed on each run, so adding or removing a stored file
+can shift later IDs. Paths under `$HOME` are shown with a leading `~`; paths
+outside it are shown absolute. The shared trailing path components appear in
+cyan in both columns when the host copy matches, and in yellow when it
+differs. The `.git` directory is skipped so the root can itself be a git repo,
+and files whose names end in `.BAK` (backups made by `--force`) are not
+listed.
 
 When output is piped, `dotfig list` prints one row per entry with no header:
-`id`, `store`, `host`, and `status` separated by tabs, without colors. This is
-intended for tools such as `cut`:
+`id`, `store`, `host`, and `status` separated by tabs, without colors. When the
+`State` column is present, each row gains a fifth field with the state, or `-`
+for a matching entry. This is intended for tools such as `cut`:
 
 ```sh
 dotfig list | cut -f1,3

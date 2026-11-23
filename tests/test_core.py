@@ -344,6 +344,11 @@ def test_list_managed_skips_git_and_reports_matches(
         (".gemrc", False),
         (".vimrc", False),
     ]
+    assert [entry.state for entry in entries] == [
+        core.HostState.MATCHED,
+        core.HostState.DIFFERS,
+        core.HostState.MISSING,
+    ]
 
 
 def test_list_managed_symlink_is_not_a_match(cfg: Config, home: Path) -> None:
@@ -352,6 +357,7 @@ def test_list_managed_symlink_is_not_a_match(cfg: Config, home: Path) -> None:
     file.symlink_to(store)
     (entry,) = core.list_managed(cfg)
     assert not entry.matches
+    assert entry.state is core.HostState.SYMLINK
 
 
 def test_list_managed_wrong_link_is_not_a_match(
@@ -362,6 +368,37 @@ def test_list_managed_wrong_link_is_not_a_match(
     file.symlink_to(home / "other")
     (entry,) = core.list_managed(cfg)
     assert not entry.matches
+    assert entry.state is core.HostState.BROKEN_SYMLINK
+
+
+def test_host_state_classifies_each_host_case(cfg: Config, home: Path) -> None:
+    store = make_file(cfg.root / "stored", "same")
+    matched = make_file(home / "matched", "same")
+    missing = home / "missing"
+    symlink = home / "symlink"
+    symlink.symlink_to(store)
+    broken = home / "broken"
+    broken.symlink_to(home / "gone")
+    directory = home / "directory"
+    directory.mkdir()
+    different = make_file(home / "different", "other")
+
+    assert core.host_state(matched, store) is core.HostState.MATCHED
+    assert core.host_state(missing, store) is core.HostState.MISSING
+    assert core.host_state(symlink, store) is core.HostState.SYMLINK
+    assert core.host_state(broken, store) is core.HostState.BROKEN_SYMLINK
+    assert core.host_state(directory, store) is core.HostState.NOT_FILE
+    assert core.host_state(different, store) is core.HostState.DIFFERS
+
+
+def test_host_state_with_non_file_store_does_not_match(
+    cfg: Config, home: Path
+) -> None:
+    host = make_file(home / "host")
+    store = cfg.root / "stored"
+    store.mkdir(parents=True)
+
+    assert core.host_state(host, store) is core.HostState.DIFFERS
 
 
 def test_break_link_replaces_symlink_with_copy(cfg: Config, home: Path) -> None:

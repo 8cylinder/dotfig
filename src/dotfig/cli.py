@@ -288,7 +288,7 @@ def _color_common(path: str, common: str, color: str = "cyan") -> str:
 @cli.command(name="list", cls=AppCommand)
 @_handle_errors
 def list_command() -> None:
-    """List stored config files with IDs and a match status."""
+    """List stored config files with IDs, status, and host state."""
     output = _output()
     cfg = Config.load()
     entries = core.list_managed(cfg)
@@ -297,25 +297,25 @@ def list_command() -> None:
             output.console.print("no stored config files")
         return
     home = Path.home()
+    has_issue = any(not entry.matches for entry in entries)
     if not output.human():
         for index, entry in enumerate(entries):
             symbol = "✓" if entry.matches else "✗"
-            click.echo(
-                "\t".join(
-                    (
-                        core.entry_id(index),
-                        core.display_path(home, entry.store),
-                        core.display_path(home, entry.host),
-                        symbol,
-                    )
-                )
-            )
+            fields = [
+                core.entry_id(index),
+                core.display_path(home, entry.store),
+                core.display_path(home, entry.host),
+                symbol,
+            ]
+            if has_issue:
+                fields.append("-" if entry.matches else entry.state.value)
+            click.echo("\t".join(fields))
         return
+    headers = ["ID", "Store", "Host", "Status"]
+    if has_issue:
+        headers.append("State")
     table = Table(
-        "ID",
-        "Store",
-        "Host",
-        "Status",
+        *headers,
         box=box.SIMPLE_HEAD,
         show_edge=False,
         pad_edge=False,
@@ -325,7 +325,7 @@ def list_command() -> None:
         color = "green" if entry.matches else "red"
         path_color = "cyan" if entry.matches else "yellow"
         common = str(entry.store.relative_to(cfg.root))
-        table.add_row(
+        row = [
             core.entry_id(index),
             _color_common(
                 core.display_path(home, entry.store), common, path_color
@@ -334,7 +334,11 @@ def list_command() -> None:
                 core.display_path(home, entry.host), common, path_color
             ),
             f"[{color}]{symbol}[/]",
-        )
+        ]
+        if has_issue:
+            state = "" if entry.matches else f"[red]{entry.state.value}[/]"
+            row.append(state)
+        table.add_row(*row)
     output.console.print(table)
 
 
