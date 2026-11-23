@@ -1,6 +1,6 @@
 # Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
 build/
 dist/
 wheels/
@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv/
+venv/
 *OFF*
 
 # Tool caches
@@ -22,6 +23,17 @@ wheels/
 coverage.xml
 htmlcov/
 
+# Sphinx
+docs/_build/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
 # OS and editor files
 .DS_Store
 *.swp
+.vscode/
+.idea/
+Thumbs.db

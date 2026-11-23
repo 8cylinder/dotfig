@@ -12,6 +12,9 @@ from dotfig.config import Config
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.delenv("BASH_COMPLETION_USER_DIR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
     config = importlib.import_module("dotfig.config")
     monkeypatch.setattr(
         config,

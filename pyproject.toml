@@ -1,8 +1,10 @@
 [project]
 name = "dotfig"
-version = "0.2.0"
+version = "0.3.0"
 description = "Manage dot files"
 readme = "README.md"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
 authors = [
     { name = "Sheldon McGrandle", email = "developer@8cylinder.com" }
 ]
@@ -11,16 +13,25 @@ dependencies = [
     "click>=8.5.0",
     "platformdirs>=4.5.0",
     "rich>=15.0.0",
-    "ruff>=0.16.8",
-    "ty>=0.0.83",
 ]
 
 [project.scripts]
 dotfig = "dotfig:main"
 
+[project.urls]
+Homepage = "https://github.com/8cylinder/dotfig"
+Repository = "https://github.com/8cylinder/dotfig"
+Issues = "https://github.com/8cylinder/dotfig/issues"
+
 [dependency-groups]
 dev = [
+    "myst-parser",
     "pytest>=8.0.0",
+    "pytest-cov>=6",
+    "ruff",
+    "sphinx>=9",
+    "sphinx-click>=6",
+    "ty",
 ]
 
 [build-system]
@@ -67,6 +78,9 @@ extend-ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"docs/conf.py" = [
+    "implicit-namespace-package",     # Sphinx config, not an importable package
+]
 "tests/**" = [
     "assert",                         # pytest uses assertions
     "undocumented-public-module",     # no docstrings in tests
@@ -79,7 +93,21 @@ extend-ignore = [
     "unused-function-argument",       # fixtures may be requested for side effects only
     "typing-only-standard-library-import",  # imports used only in annotations
     "import-private-name",            # tests exercise private helpers
+    "too-many-arguments",             # Click callbacks mirror their parameters
+    "too-many-positional-arguments",  # Click callbacks mirror their parameters
 ]
 
 [tool.ruff.format]
 docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config --cov=dotfig --cov-branch --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["dotfig"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true

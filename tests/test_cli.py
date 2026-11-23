@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import importlib
-import io
-from importlib.metadata import version
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from click.testing import CliRunner, Result
-from rich.console import Console
 
 from dotfig.cli import _color_common, _print_diff, cli
 from dotfig.config import Config, config_path
@@ -16,12 +14,15 @@ if TYPE_CHECKING:
     import pytest
 
 
+EXPECTED_MODE = 0o644
+
+
 def run(args: list[str], input_text: str | None = None) -> Result:
-    return CliRunner().invoke(cli, args, input=input_text)
+    return CliRunner().invoke(cli, args, input=input_text, prog_name="dotfig")
 
 
 def output(result: Result) -> str:
-    return result.output + result.stderr
+    return result.output
 
 
 def test_color_common_marks_trailing_shared_path() -> None:
@@ -710,29 +711,18 @@ def test_list_terminal_shows_table(
     assert "✓" in text
 
 
-def test_list_terminal_colors_differing_paths_yellow(
-    home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_list_color_always_colors_differing_paths_yellow(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     config = home / ".bashrc"
     config.write_text("stored\n")
     assert run(["store", str(config)]).exit_code == 0
     config.write_text("local\n")
-    module = importlib.import_module("dotfig.cli")
-    monkeypatch.setattr(module, "_stdout_is_tty", lambda: True)
-    stream = io.StringIO()
-    monkeypatch.setattr(
-        module,
-        "console",
-        Console(file=stream, force_terminal=True, color_system="standard"),
-    )
 
-    listed = run(["list"])
+    listed = run(["--color", "always", "list"])
     assert listed.exit_code == 0, output(listed)
-    text = stream.getvalue()
-    assert "\x1b[33m" in text
-    assert "\x1b[36m" not in text
+    assert "\x1b[33m" in listed.stdout
+    assert "\x1b[36m" not in listed.stdout
 
 
 def test_restore_rejects_unknown_id(home: Path) -> None:
@@ -790,74 +780,211 @@ def test_no_args_without_init_fails(home: Path) -> None:
 def test_completions_writes_bash_script(home: Path) -> None:
     result = run(["--completions"])
     assert result.exit_code == 0, output(result)
-    script = home / "data" / "bash-completion" / "completions" / "dotfig"
+    script = home / "data" / "bash-completion" / "completions" / "dotfig.bash"
     assert script.is_file()
-    assert "_dotfig_completion" in script.read_text()
-    text = output(result)
-    assert "created" in text
-    assert str(script) in text
-    assert f"source {script}" in text
+    assert "_dotfig_complete" in script.read_text()
+    assert result.stdout.strip() == str(script)
+    assert "source " + str(script) in result.stderr
+    assert "2.18" in result.stderr
 
 
-def test_completions_reports_overwrite(home: Path) -> None:
-    assert run(["--completions"]).exit_code == 0
-    second = run(["--completions"])
-    assert second.exit_code == 0, output(second)
-    assert "overwrote" in output(second)
+def test_completions_overwrites_existing_file(home: Path) -> None:
+    script = home / "data" / "bash-completion" / "completions" / "dotfig.bash"
+    script.parent.mkdir(parents=True)
+    script.write_text("stale")
+    result = run(["--completions"])
+    assert result.exit_code == 0, output(result)
+    assert script.read_text() != "stale"
+    assert script.stat().st_mode & 0o777 == EXPECTED_MODE
+
+
+def test_completions_prefers_bash_completion_user_dir(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = home / "bash-completion-user"
+    monkeypatch.setenv("BASH_COMPLETION_USER_DIR", f":{target}:")
+    result = run(["--completions"])
+    assert result.exit_code == 0, output(result)
+    script = target / "bash-completion" / "completions" / "dotfig.bash"
+    assert script.is_file()
+    assert result.stdout.strip() == str(script)
 
 
 def test_completions_falls_back_to_local_share(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("XDG_DATA_HOME")
+    monkeypatch.delenv("BASH_COMPLETION_USER_DIR", raising=False)
 
     result = run(["--completions"])
     assert result.exit_code == 0, output(result)
     script = (
-        home / ".local" / "share" / "bash-completion" / "completions" / "dotfig"
+        home
+        / ".local"
+        / "share"
+        / "bash-completion"
+        / "completions"
+        / "dotfig.bash"
     )
     assert script.is_file()
+    assert result.stdout.strip() == str(script)
 
 
 def test_completions_ignores_subcommand(home: Path) -> None:
     result = run(["--completions", "store", "--force"])
     assert result.exit_code == 0, output(result)
-    script = home / "data" / "bash-completion" / "completions" / "dotfig"
+    script = home / "data" / "bash-completion" / "completions" / "dotfig.bash"
     assert script.is_file()
 
 
 def test_completions_warns_for_old_bash(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    module = importlib.import_module("dotfig.cli")
+    module = importlib.import_module("dotfig.completions")
     monkeypatch.setattr(module, "_bash_version", lambda: (3, 2))
 
     result = run(["--completions"])
     assert result.exit_code == 0, output(result)
     assert "bash 3.2 is too old" in result.stderr
-    script = home / "data" / "bash-completion" / "completions" / "dotfig"
+    script = home / "data" / "bash-completion" / "completions" / "dotfig.bash"
     assert script.is_file()
 
 
-def test_config_flag_prints_path_and_exits(home: Path) -> None:
-    for args in (["--config"], ["--config", "list"]):
-        result = run(args)
+def test_completions_warns_when_bash_is_missing(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = importlib.import_module("dotfig.completions")
+    monkeypatch.setattr(module, "_bash_version", lambda: None)
+
+    result = run(["--completions"])
+    assert result.exit_code == 0, output(result)
+    assert "bash was not found" in result.stderr
+
+
+def test_completions_excludes_hidden_commands(home: Path) -> None:
+    assert run(["--completions"]).exit_code == 0
+    script = home / "data" / "bash-completion" / "completions" / "dotfig.bash"
+    text = script.read_text()
+    assert "break)" not in text
+    assert "break " not in text
+
+
+def test_color_always_emits_ansi(home: Path) -> None:
+    result = run(["--color", "always", "init", str(home / "tree")])
+    assert result.exit_code == 0, output(result)
+    assert "\x1b[" in result.stdout
+
+
+def test_color_never_emits_no_ansi(home: Path) -> None:
+    result = run(["--color", "never", "init", str(home / "tree")])
+    assert result.exit_code == 0, output(result)
+    assert "\x1b[" not in result.stdout + result.stderr
+
+
+def test_color_auto_emits_no_ansi_when_captured(home: Path) -> None:
+    result = run(["--color", "auto", "init", str(home / "tree")])
+    assert result.exit_code == 0, output(result)
+    assert "\x1b[" not in result.stdout + result.stderr
+
+
+def test_force_color_is_honored_in_auto_mode(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    result = run(["--color", "auto", "init", str(home / "tree")])
+    assert result.exit_code == 0, output(result)
+    assert "\x1b[" in result.stdout
+
+
+def test_no_color_is_honored_in_auto_mode(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    result = run(
+        ["--color", "auto", "--color", "always", "init", str(home / "tree")]
+    )
+    assert result.exit_code == 0, output(result)
+
+
+def test_markup_in_user_input_is_escaped(home: Path) -> None:
+    path = home / "[red]tree"
+    result = run(["--color", "never", "init", str(path)])
+    assert result.exit_code == 0, output(result)
+    assert "[red]tree" in result.stdout
+
+
+def test_errors_go_to_stderr(home: Path) -> None:
+    result = run(["list"])
+    assert result.exit_code != 0
+    assert not result.stdout
+    assert "error:" in result.stderr
+
+
+def test_normal_output_goes_to_stdout(home: Path) -> None:
+    result = run(["init", str(home / "tree")])
+    assert result.exit_code == 0, output(result)
+    assert "initialized" in result.stdout
+    assert not result.stderr
+
+
+def test_help_flags_for_every_command() -> None:
+    commands = ("init", "list", "diff", "store", "restore")
+    for command in commands:
+        for flag in ("-h", "--help"):
+            result = run([command, flag])
+            assert result.exit_code == 0, (command, flag, output(result))
+            assert "Usage" in result.output
+            assert "\x1b[" not in result.output
+    for flag in ("-h", "--help"):
+        result = run([flag])
         assert result.exit_code == 0, output(result)
-        assert result.output.strip() == str(config_path())
-        assert "no stored config files" not in output(result)
+        assert "Usage" in result.output
+        assert "\x1b[" not in result.output
 
 
-def test_version_flag_reports_package_version() -> None:
+def test_version_output_has_no_ansi() -> None:
     result = run(["--version"])
     assert result.exit_code == 0, output(result)
-    assert version("dotfig") in output(result)
+    assert "\x1b[" not in result.output
 
 
-def test_short_help_flag_on_group_and_subcommand() -> None:
-    group = run(["-h"])
-    assert group.exit_code == 0, output(group)
-    assert "Usage" in output(group)
+def test_config_flag_does_not_create_the_file(home: Path) -> None:
+    result = run(["--config"])
+    assert result.exit_code == 0, output(result)
+    assert not config_path().exists()
+    assert not config_path().parent.exists()
 
-    command = run(["store", "-h"])
-    assert command.exit_code == 0, output(command)
-    assert "Usage" in output(command)
+
+def test_config_output_has_no_ansi(home: Path) -> None:
+    result = run(["--color", "always", "--config"])
+    assert result.exit_code == 0, output(result)
+    assert "\x1b[" not in result.output
+    assert result.stdout.strip() == str(config_path())
+
+
+def test_version_matches_pyproject() -> None:
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        expected = tomllib.load(handle)["project"]["version"]
+
+    result = run(["--version"])
+
+    assert result.exit_code == 0, output(result)
+    assert result.output.strip() == f"dotfig, version {expected}"
+
+
+def test_force_color_in_auto_mode_formats_list_for_people(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("export X=1")
+    assert run(["store", str(config)]).exit_code == 0
+    monkeypatch.setenv("FORCE_COLOR", "1")
+
+    listed = run(["--color", "auto", "list"])
+
+    assert listed.exit_code == 0, output(listed)
+    assert "ID" in listed.stdout
+    assert "\x1b[" in listed.stdout

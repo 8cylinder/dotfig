@@ -4,30 +4,152 @@ from __future__ import annotations
 
 import functools
 import os
-import re
-import shutil
-import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import click
-from click.shell_completion import get_completion_class
 from rich import box
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
 from . import core
+from .completions import completions_callback
 from .config import Config, DotfigError, config_path
 from .diffview import show_diff
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
-console = Console()
+COLORS = ("auto", "always", "never")
 
-CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
+def _help_settings(
+    context_settings: Mapping[str, object] | None,
+) -> dict[str, object]:
+    settings = dict(context_settings or {})
+    settings.setdefault("help_option_names", ["-h", "--help"])
+    return settings
+
+
+class AppCommand(click.Command):
+    """A command with the app's shared help options."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # ruff: ignore[any-type]
+        """Build the command with ``-h`` and ``--help`` enabled."""
+        raw = kwargs.pop("context_settings", None)
+        super().__init__(
+            *args,
+            context_settings=_help_settings(
+                cast("Mapping[str, object] | None", raw)
+            ),
+            **kwargs,
+        )
+
+
+class AppGroup(click.Group):
+    """A command group with the app's shared help options."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # ruff: ignore[any-type]
+        """Build the group with ``-h`` and ``--help`` enabled."""
+        raw = kwargs.pop("context_settings", None)
+        super().__init__(
+            *args,
+            context_settings=_help_settings(
+                cast("Mapping[str, object] | None", raw)
+            ),
+            **kwargs,
+        )
+
+
+@dataclass(frozen=True)
+class Output:
+    """The consoles and color decision for one invocation."""
+
+    console: Console
+    err_console: Console
+    color: str
+
+    def human(self) -> bool:
+        """Whether stdout should be formatted for a person.
+
+        Returns:
+            Whether stdout is a terminal, color is forced on, or
+            FORCE_COLOR selects human output in auto mode.
+
+        """
+        if self.color == "always":
+            return True
+        if self.color == "never":
+            return _stdout_is_tty()
+        if os.environ.get("FORCE_COLOR"):
+            return True
+        return _stdout_is_tty()
+
+
+def _stdout_is_tty() -> bool:
+    return bool(sys.stdout.isatty())
+
+
+def _make_console(mode: str, *, stderr: bool = False) -> Console:
+    if mode == "always":
+        return Console(stderr=stderr, force_terminal=True, no_color=False)
+    if mode == "never":
+        return Console(stderr=stderr, force_terminal=False, no_color=True)
+    if os.environ.get("FORCE_COLOR"):
+        return Console(stderr=stderr, force_terminal=True, no_color=False)
+    if os.environ.get("TERM") == "dumb":
+        return Console(stderr=stderr, force_terminal=False, no_color=True)
+    if os.environ.get("NO_COLOR"):
+        return Console(stderr=stderr, no_color=True)
+    return Console(stderr=stderr)
+
+
+def _click_color(mode: str) -> bool | None:
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return None
+
+
+def _output() -> Output:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and isinstance(ctx.obj, Output):
+        return ctx.obj
+    return Output(
+        console=_make_console("auto"),
+        err_console=_make_console("auto", stderr=True),
+        color="auto",
+    )
+
+
+def _error(message: str) -> NoReturn:
+    _output().err_console.print(
+        f"[red]error:[/red] {escape(message)}", soft_wrap=True
+    )
+    raise click.exceptions.Exit(1)
+
+
+def _diff_paths(cfg: Config, entry: core.Entry) -> tuple[Path, Path]:
+    store, host = core.restore_paths(cfg, entry.store)
+    if not store.is_file():
+        raise DotfigError(f"no stored copy at {store}; nothing to diff")
+    if not host.exists():
+        raise DotfigError(f"{host} does not exist; nothing to diff")
+    if not host.is_file():
+        raise DotfigError(f"{host} is not a file; nothing to diff")
+    return store, host
+
+
+def _print_result(message: str) -> None:
+    output = _output()
+    if "\n" in message:
+        output.console.print(escape(message), soft_wrap=True)
+        return
+    output.console.print(f"[green]ok[/green] {escape(message)}")
 
 
 def _handle_errors[**P](func: Callable[P, None]) -> Callable[P, None]:
@@ -36,14 +158,30 @@ def _handle_errors[**P](func: Callable[P, None]) -> Callable[P, None]:
         try:
             func(*args, **kwargs)
         except DotfigError as exc:
-            raise click.ClickException(str(exc)) from exc
+            _error(str(exc))
 
     return wrapper
 
 
+def _set_color(
+    ctx: click.Context,
+    _param: click.Parameter | None,
+    value: str,
+) -> str:
+    """Apply the color choice to Click's own output.
+
+    Returns:
+        The unchanged option value for Click's parameter handling.
+
+    """
+    if not ctx.resilient_parsing:
+        ctx.color = _click_color(value)
+    return value
+
+
 def _print_config(
     ctx: click.Context,
-    _param: click.Parameter,
+    _param: click.Parameter | None,
     value: bool,  # ruff: ignore[boolean-type-hint-positional-argument]
 ) -> None:
     """Print the config file path and exit."""
@@ -53,100 +191,20 @@ def _print_config(
     ctx.exit()
 
 
-def _bash_completion_path() -> Path:
-    """Return the bash completion script path.
-
-    Returns:
-        The path under ``$XDG_DATA_HOME`` or ``~/.local/share``.
-
-    """
-    data = Path(
-        os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
-    )
-    return data / "bash-completion" / "completions" / "dotfig"
-
-
-def _bash_version() -> tuple[int, int] | None:
-    """Return the installed bash major and minor version.
-
-    Returns:
-        The parsed version, or ``None`` when bash cannot be inspected.
-
-    """
-    bash = shutil.which("bash")
-    if bash is None:
-        return None
-    try:
-        completed = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-            [bash, "--norc", "-c", 'printf "%s\\n" "$BASH_VERSION"'],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return None
-    match = re.match(r"^(\d+)\.(\d+)", completed.stdout)
-    if match is None:
-        return None
-    return int(match.group(1)), int(match.group(2))
-
-
-def _warn_old_bash(version: tuple[int, int]) -> None:
-    """Warn that VERSION is too old for Click's bash completion script."""
-    click.secho(
-        f"warning: bash {version[0]}.{version[1]} is too old for completions; "
-        "bash 4.4 or newer is required, so the script may not work. On macOS, "
-        "install a newer bash (for example with Homebrew) and use it as your "
-        "shell.",
-        fg="yellow",
-        err=True,
-    )
-
-
-def _bash_completion_script() -> str:
-    """Generate a bash completion script without Click's version check.
-
-    Returns:
-        The bash completion script for this command.
-
-    Raises:
-        DotfigError: If Click has no bash completion support.
-
-    """
-    complete_class = get_completion_class("bash")
-    if complete_class is None:
-        raise DotfigError("bash completion is not available")
-    completion = complete_class(cli, {}, "dotfig", "_DOTFIG_COMPLETE")
-    return completion.source_template % completion.source_vars()
-
-
-def _write_completions(
-    ctx: click.Context,
-    _param: click.Parameter,
-    value: bool,  # ruff: ignore[boolean-type-hint-positional-argument]
-) -> None:
-    """Write the bash completion script and exit."""
-    if not value or ctx.resilient_parsing:
-        return
-    version = _bash_version()
-    if version is not None and version < (4, 4):
-        _warn_old_bash(version)
-    path = _bash_completion_path()
-    existed = path.exists()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_bash_completion_script(), encoding="utf-8")
-    console.print(f"{'overwrote' if existed else 'created'} {path}")
-    console.print("to enable completion in this shell, run:", soft_wrap=True)
-    console.print(f"  source {path}", soft_wrap=True)
-    ctx.exit()
-
-
 @click.group(
-    context_settings=CONTEXT_SETTINGS,
+    cls=AppGroup,
     invoke_without_command=True,
     no_args_is_help=False,
+    epilog=(
+        "\b\nExamples:\n\n"
+        "\b\n"
+        "  dotfig init ~/dotfiles\n"
+        "  dotfig store ~/.bashrc\n"
+        "  dotfig list\n"
+        "  dotfig restore a"
+    ),
 )
-@click.version_option(package_name="dotfig")
+@click.version_option(package_name="dotfig", prog_name="dotfig")
 @click.option(
     "--config",
     "show_config",
@@ -162,39 +220,56 @@ def _write_completions(
     is_flag=True,
     is_eager=True,
     expose_value=False,
-    callback=_write_completions,
+    callback=completions_callback,
     help="Write bash completions and exit.",
 )
+@click.option(
+    "--color",
+    type=click.Choice(COLORS, case_sensitive=False),
+    default="auto",
+    show_default=True,
+    is_eager=True,
+    callback=_set_color,
+    help="Control colored output.",
+)
 @click.pass_context
-def cli(ctx: click.Context) -> None:
+def cli(ctx: click.Context, color: str) -> None:
     """Manage individual config files with a git-friendly dotfig tree."""
+    ctx.color = _click_color(color)
+    ctx.obj = Output(
+        console=_make_console(color),
+        err_console=_make_console(color, stderr=True),
+        color=color,
+    )
     if ctx.invoked_subcommand is None:
         ctx.invoke(list_command)
 
 
-@cli.command()
+@cli.command(cls=AppCommand)
 @click.argument("path", type=click.Path(path_type=Path))
 @click.option(
     "--force", is_flag=True, help="Overwrite an existing dotfig config."
 )
 @_handle_errors
 def init(path: Path, *, force: bool) -> None:
-    """Create PATH as the dotfig root and write the config file.
-
-    Raises:
-        ClickException: If the config exists and --force was not given.
-
-    """
+    """Create PATH as the dotfig root and write the config file."""
     cfg_path = config_path()
-    if cfg_path.exists() and not force:
-        raise click.ClickException(
-            f"{cfg_path} already exists; use --force to overwrite it"
-        )
+    _ensure_new_config(cfg_path, force=force)
     root = core.absolute(path)
     root.mkdir(parents=True, exist_ok=True)
     Config(root=root).save()
-    console.print(f"initialized dotfig root at {root}")
-    console.print(f"wrote {cfg_path}")
+    output = _output()
+    output.console.print(
+        f"[green]ok[/green] initialized dotfig root at {escape(str(root))}"
+    )
+    output.console.print(f"[green]ok[/green] wrote {escape(str(cfg_path))}")
+
+
+def _ensure_new_config(cfg_path: Path, *, force: bool) -> None:
+    if cfg_path.exists() and not force:
+        raise DotfigError(
+            f"{cfg_path} already exists; use --force to overwrite it"
+        )
 
 
 def _color_common(path: str, common: str, color: str = "cyan") -> str:
@@ -210,18 +285,19 @@ def _color_common(path: str, common: str, color: str = "cyan") -> str:
     return f"{escape(prefix)}[{color}]{escape(common)}[/{color}]"
 
 
-@cli.command(name="list")
+@cli.command(name="list", cls=AppCommand)
 @_handle_errors
 def list_command() -> None:
     """List stored config files with IDs and a match status."""
+    output = _output()
     cfg = Config.load()
     entries = core.list_managed(cfg)
     if not entries:
-        if _stdout_is_tty():
-            console.print("no stored config files")
+        if output.human():
+            output.console.print("no stored config files")
         return
     home = Path.home()
-    if not _stdout_is_tty():
+    if not output.human():
         for index, entry in enumerate(entries):
             symbol = "✓" if entry.matches else "✗"
             click.echo(
@@ -259,38 +335,29 @@ def list_command() -> None:
             ),
             f"[{color}]{symbol}[/]",
         )
-    console.print(table)
+    output.console.print(table)
 
 
-@cli.command()
+@cli.command(cls=AppCommand)
 @click.argument("entry_id", metavar="ID")
 @_handle_errors
 def diff(entry_id: str) -> None:
     """Show differences between the entry with ID and its host path.
 
     ID is the identifier shown by 'dotfig list'.
-
-    Raises:
-        DotfigError: If the stored copy or host path is missing, the host path
-            is not a file, or stdout/stdin are not an interactive terminal.
-
     """
     cfg = Config.load()
     entry = core.find_entry(core.list_managed(cfg), entry_id)
-    store, host = core.restore_paths(cfg, entry.store)
-    if not store.is_file():
-        raise DotfigError(f"no stored copy at {store}; nothing to diff")
-    if not host.exists():
-        raise DotfigError(f"{host} does not exist; nothing to diff")
-    if not host.is_file():
-        raise DotfigError(f"{host} is not a file; nothing to diff")
+    store, host = _diff_paths(cfg, entry)
     if core.contents_equal(store, host):
-        console.print(f"{host} matches the stored copy", soft_wrap=True)
+        _output().console.print(
+            f"{escape(str(host))} matches the stored copy", soft_wrap=True
+        )
         return
     _print_diff(cfg, store, host)
 
 
-@cli.command()
+@cli.command(cls=AppCommand)
 @click.argument("file", metavar="FILE|ID", type=click.Path(path_type=Path))
 @click.option(
     "--force",
@@ -306,10 +373,10 @@ def store(file: Path, *, force: bool) -> None:
     cfg = Config.load()
     file = _resolve_store_target(cfg, file)
     if force and not core.inside_root(cfg, file):
-        store = core.store_path(cfg, file)
-        if _store_conflicts(store, file):
-            _confirm_overwrite(cfg, target=file, current=store)
-    console.print(core.store(cfg, file, force=force))
+        stored = core.store_path(cfg, file)
+        if _store_conflicts(stored, file):
+            _confirm_overwrite(cfg, target=file, current=stored)
+    _print_result(core.store(cfg, file, force=force))
 
 
 def _resolve_store_target(cfg: Config, file: Path) -> Path:
@@ -328,7 +395,7 @@ def _resolve_store_target(cfg: Config, file: Path) -> Path:
         return file
 
 
-@cli.command()
+@cli.command(cls=AppCommand)
 @click.argument("entry_id", metavar="ID")
 @click.option(
     "-d",
@@ -364,20 +431,20 @@ def restore(
     if show_diff:
         _show_diff(cfg, entry.store)
     if force and not dry_run:
-        store, host = core.restore_paths(cfg, entry.store)
-        if store.is_file() and core.restore_conflict(store, host):
-            _confirm_overwrite(cfg, target=store, current=host)
-    console.print(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
+        stored, host = core.restore_paths(cfg, entry.store)
+        if stored.is_file() and core.restore_conflict(stored, host):
+            _confirm_overwrite(cfg, target=stored, current=host)
+    _print_result(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
 
 
-@cli.command(name="break", hidden=True)
+@cli.command(name="break", cls=AppCommand, hidden=True)
 @click.argument("entry_id", metavar="ID")
 @_handle_errors
 def break_command(entry_id: str) -> None:
     """Replace a managed host symlink with a copy of the stored file."""
     cfg = Config.load()
     entry = core.find_entry(core.list_managed(cfg), entry_id)
-    console.print(core.break_link(cfg, entry.store))
+    _print_result(core.break_link(cfg, entry.store))
 
 
 def _store_conflicts(store: Path, file: Path) -> bool:
@@ -397,10 +464,6 @@ def _show_diff(cfg: Config, file: Path) -> None:
         and not core.contents_equal(store, host)
     ):
         _print_diff(cfg, store, host)
-
-
-def _stdout_is_tty() -> bool:
-    return bool(sys.stdout.isatty())
 
 
 def _can_use_tui() -> bool:

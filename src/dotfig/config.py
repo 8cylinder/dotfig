@@ -7,10 +7,12 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import click
 from platformdirs import user_config_dir
 
 APP_NAME = "dotfig"
 CONFIG_NAME = "config.toml"
+KNOWN_KEYS = frozenset({"root", "diff_tool"})
 
 
 class DotfigError(Exception):
@@ -61,9 +63,17 @@ class Config:
         if not path.is_file():
             raise DotfigError(f"{path} not found; run 'dotfig init PATH' first")
         try:
-            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            with path.open("rb") as handle:
+                data = tomllib.load(handle)
         except tomllib.TOMLDecodeError as exc:
             raise DotfigError(f"{path} is not valid TOML: {exc}") from exc
+        unknown = sorted(set(data) - KNOWN_KEYS)
+        if unknown:
+            keys = ", ".join(unknown)
+            click.echo(
+                f"warning: ignoring unknown config key(s) in {path}: {keys}",
+                err=True,
+            )
         root = data.get("root")
         if not isinstance(root, str):
             raise DotfigError(f"{path} must contain a 'root' string")
@@ -74,7 +84,10 @@ class Config:
             raise DotfigError(
                 f"{path} must contain a non-empty 'diff_tool' string"
             )
-        return cls(root=Path(root), diff_tool=diff_tool)
+        root_path = Path(os.path.expandvars(root)).expanduser()
+        if not root_path.is_absolute():
+            root_path = path.parent / root_path
+        return cls(root=root_path, diff_tool=diff_tool)
 
     def save(self, path: Path | None = None) -> None:
         """Write the config to disk, creating parent directories."""
@@ -88,6 +101,7 @@ class Config:
             lines.append(f"diff_tool = {toml_string(self.diff_tool)}")
         lines.append("")
         path.write_text("\n".join(lines), encoding="utf-8")
+        path.chmod(0o600)
 
 
 def toml_string(value: str) -> str:

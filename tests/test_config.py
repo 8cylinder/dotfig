@@ -6,6 +6,8 @@ import pytest
 
 from dotfig.config import Config, DotfigError, config_path, toml_string
 
+PRIVATE_MODE = 0o600
+
 
 def test_config_path_uses_platform_config_dir(home: Path) -> None:
     assert config_path() == home / "config" / "dotfig" / "config.toml"
@@ -108,3 +110,31 @@ def test_relative_root_rejected() -> None:
 
 def test_toml_string_escapes() -> None:
     assert toml_string('a"b\\c') == '"a\\"b\\\\c"'
+
+
+def test_save_uses_private_mode(tmp_path: Path) -> None:
+    path = tmp_path / "config"
+    Config(root=tmp_path / "root").save(path=path)
+    assert path.stat().st_mode & 0o777 == PRIVATE_MODE
+
+
+def test_load_warns_about_unknown_keys(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "config"
+    path.write_text(f'root = "{tmp_path / "root"}"\nextra = true\n')
+
+    Config.load(path=path)
+
+    captured = capsys.readouterr()
+    assert "warning: ignoring unknown config key(s)" in captured.err
+    assert "extra" in captured.err
+
+
+def test_load_resolves_relative_root_against_config_dir(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    path = config_dir / "config.toml"
+    path.write_text('root = "tree"\n')
+
+    assert Config.load(path=path).root == config_dir / "tree"

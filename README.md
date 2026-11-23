@@ -2,34 +2,43 @@
 
 [github.com/8cylinder/dotfig](https://github.com/8cylinder/dotfig)
 
-Manage individual config files with a git-friendly tree. `dotfig` keeps copies
-of files in a root directory that mirrors their path in `$HOME`, copying files
+[![CI](https://github.com/8cylinder/dotfig/actions/workflows/ci.yml/badge.svg)](https://github.com/8cylinder/dotfig/actions/workflows/ci.yml)
+[![License: GPL-2.0-only](https://img.shields.io/badge/license-GPL--2.0--only-blue.svg)](LICENSE)
+
+Manage individual config files with a git-friendly tree. dotfig keeps copies of
+files in a root directory that mirrors their path in `$HOME`, copying files
 between the store and the host. Commit the root to git and check it out on other
 machines to sync your configs.
 
 ## Requirements
 
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (recommended)
-- `make` for the development commands
+- Python 3.13 or newer.
+- [uv](https://docs.astral.sh/uv/) and `make` for development and installation
+  from source.
+- bash 4.4 or newer for the generated completions.
+- bash-completion 2.18 or newer for automatic completion loading.
+- [gitleaks](https://github.com/gitleaks/gitleaks#installing) 8.19 or newer to
+  commit; the pre-commit hook blocks secrets. CI runs the same scan.
+- Linux or macOS. Windows is not supported because dotfig relies on POSIX
+  paths and the commit hook is a bash script.
 - An optional external diff viewer on `PATH` for `dotfig diff` and the `d`
   prompt. Set `diff_tool` in the config; without it, dotfig uses `diff -u`.
 
-## Download and build
+## Installation
 
-Clone the repository and install the CLI as an editable uv tool:
+dotfig is not published on PyPI. Install it from source:
 
 ```sh
 git clone https://github.com/8cylinder/dotfig.git
 cd dotfig
 make sync
-make check
 make install
 dotfig --help
 ```
 
-`make install` runs `uv tool install --editable --force .`, so the `dotfig`
-command stays pointed at the checkout.
+`make install` runs `uv tool install --editable --force .`, then generates bash
+completions and builds and installs the man page. Because the install is
+editable, the `dotfig` command stays pointed at the checkout.
 
 To work from the checkout without installing the tool:
 
@@ -38,9 +47,42 @@ make sync
 uv run dotfig --help
 ```
 
-## Global options
+Installing the Python package with `uv tool install dotfig` (if it were
+published) would install the command but not the man page, because `uv tool`
+does not install manual pages.
 
-Every command supports `-h` and `--help`.
+## Quick start
+
+Store your shell configuration and list it:
+
+```console
+$ dotfig init ~/dotfiles
+ok initialized dotfig root at /home/you/dotfiles
+ok wrote /home/you/.config/dotfig/config.toml
+$ dotfig store ~/.bashrc
+ok stored /home/you/.bashrc
+$ dotfig list
+ID   Store                 Host          Status
+a    ~/dotfiles/.bashrc    ~/.bashrc     ✓
+```
+
+Restore it on another machine after cloning `~/dotfiles`:
+
+```console
+$ dotfig init ~/dotfiles
+$ dotfig list
+$ dotfig restore a
+ok restored /home/you/.bashrc
+```
+
+## Command reference
+
+Run `dotfig --help` or `dotfig -h` for the built-in reference, and
+`man dotfig` for the man page.
+
+### Global options
+
+Global options are root-level, so they must appear before a subcommand.
 
 | Option | Description |
 | --- | --- |
@@ -48,27 +90,15 @@ Every command supports `-h` and `--help`.
 | `--version` | Print the version from `pyproject.toml`. |
 | `--config` | Print the config file path and exit. |
 | `--completions` | Write the bash completion script and exit. |
+| `--color [auto\|always\|never]` | Control colored output. Defaults to `auto`. |
 
-## Shell completion
+`--color=auto` colors output only on a terminal and respects `NO_COLOR`,
+`FORCE_COLOR`, and `TERM=dumb`. `--color=always` forces color, including in a
+pipe. `--color=never` disables color and ANSI styling. Machine-readable output
+(`--version`, `--config`, `--completions`) never contains ANSI escapes, and
+piped `list` output is plain unless color is forced with `--color=always`.
 
-```sh
-dotfig --completions
-```
-
-This writes a bash completion script to
-`$XDG_DATA_HOME/bash-completion/completions/dotfig`, or
-`~/.local/share/bash-completion/completions/dotfig` when `XDG_DATA_HOME` is not
-set. It then prints the script path and the `source` command that enables
-completion in the current shell.
-
-Bash completion requires **bash 4.4 or newer** and bash-completion 2.x. On
-macOS, `/bin/bash` is 3.2, so install a newer bash (for example with Homebrew),
-use it as your shell, and source `bash-completion`. macOS defaults to zsh, which
-is not covered because dotfig only writes bash completions. The
-`dotfig --completions` command prints a warning when the `bash` on `PATH` is
-older than 4.4.
-
-## Usage
+Running `dotfig` with no arguments is equivalent to `dotfig list`.
 
 ### init
 
@@ -76,8 +106,9 @@ older than 4.4.
 dotfig init PATH
 ```
 
-Create `PATH` (the dotfig root) if it doesn't exist and write the platform
-config file. Use `--force` to overwrite an existing config.
+Create `PATH` (the dotfig root) if it does not exist and write the platform
+config file. The config file is created with mode `0600`. Use `--force` to
+overwrite an existing config.
 
 ```sh
 dotfig init ~/dotfiles
@@ -90,19 +121,17 @@ dotfig list
 ```
 
 List every stored file with four columns: `ID`, `Store` (the stored path in the
-root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓` when
-the host path is a regular file with identical contents, `✗` when it differs,
-is missing, is not a regular file, or is still a symlink. The `ID` column
-assigns lowercase IDs from the current sorted list order: `a` through `z`, then
-`aa`, `ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each
-run, so adding or removing a stored file can shift later IDs. Paths under
-`$HOME` are shown with a leading `~`; paths outside it are shown absolute. The
-shared trailing path components appear in cyan in both columns when the host
-copy matches, and in yellow when it differs. The `.git` directory is skipped so
-the root can itself be a git repo, and files whose names end in `.BAK` (backups
-made by `--force`) are not listed.
-
-Running `dotfig` with no arguments is equivalent to `dotfig list`.
+root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓` when the host
+path is a regular file with identical contents, `✗` when it differs, is
+missing, is not a regular file, or is still a symlink. The `ID` column assigns
+lowercase IDs from the current sorted list order: `a` through `z`, then `aa`,
+`ab`, and so on. Use these IDs with `restore`. IDs are recomputed on each run,
+so adding or removing a stored file can shift later IDs. Paths under `$HOME`
+are shown with a leading `~`; paths outside it are shown absolute. The shared
+trailing path components appear in cyan in both columns when the host copy
+matches, and in yellow when it differs. The `.git` directory is skipped so the
+root can itself be a git repo, and files whose names end in `.BAK` (backups made
+by `--force`) are not listed.
 
 When output is piped, `dotfig list` prints one row per entry with no header:
 `id`, `store`, `host`, and `status` separated by tabs, without colors. This is
@@ -122,13 +151,13 @@ dotfig diff ID
 
 Show the difference between the entry with `ID` and its host path under
 `$HOME`. `ID` is the identifier shown by `dotfig list`; it is case-insensitive.
-This is the same view that `restore --diff` opens: the host path is the
-original side and the stored copy is the modified side. It uses the `diff_tool`
-from the config, falling back to `diff -u` when the field is unset or the tool
-is not on `PATH`, and needs an interactive terminal.
+This is the same view that `restore --diff` opens: the host path is the original
+side and the stored copy is the modified side. It uses the `diff_tool` from the
+config, falling back to `diff -u` when the field is unset or the tool is not on
+`PATH`, and needs an interactive terminal.
 
-If the host path is missing or is not a file, the command fails. If the
-contents match, it reports that and does not open the viewer.
+If the host path is missing or is not a file, the command fails. If the contents
+match, it reports that and does not open the viewer.
 
 ### store
 
@@ -138,7 +167,7 @@ dotfig store ID
 ```
 
 Copy `FILE` into the root, mirroring its `$HOME` path. `FILE` stays in place as
-a regular file; `dotfig` never creates symlinks. If the file is already stored,
+a regular file; dotfig never creates symlinks. If the file is already stored,
 `ID` from `dotfig list` (case-insensitive) can be passed instead of its path;
 paths take precedence when the argument names an existing file.
 
@@ -159,8 +188,8 @@ dotfig restore ID
 ```
 
 Copy a stored file back to its host path in `$HOME`. `ID` is the identifier
-shown by `dotfig list`; it is case-insensitive. Paths are no longer accepted, so
-run `dotfig list` first if you don't know the ID. The mirrored path under `$HOME`
+shown by `dotfig list`; it is case-insensitive. Paths are not accepted, so run
+`dotfig list` first if you do not know the ID. The mirrored path under `$HOME`
 is the host path, and its parent directories are created if needed.
 
 ```sh
@@ -199,17 +228,16 @@ managed symlink into a regular copy, run `dotfig break ID`. The command is
 hidden from `--help` and is intended only for this transition: it replaces the
 link with a copy of the stored file.
 
-## Config file
+## Configuration
 
 The config is TOML in the platform's user config directory:
 
 - Linux: `$XDG_CONFIG_HOME/dotfig/config.toml` (default
   `~/.config/dotfig/config.toml`)
 - macOS: `~/Library/Application Support/dotfig/config.toml`
-- Windows: `%APPDATA%\dotfig\config.toml`
 
-Run `dotfig --config` to print the resolved path. The file stores the root
-location and optionally the diff viewer:
+Run `dotfig --config` to print the resolved path. It does not create the
+directory or the file.
 
 ```toml
 # -*- mode: toml -*-
@@ -217,27 +245,105 @@ root = "/home/you/dotfiles"
 diff_tool = "diffuse"
 ```
 
-`diff_tool` names an executable on `PATH`. dotfig runs it with the original and
-modified file paths. When the field is absent or the executable is not on
-`PATH`, dotfig falls back to `diff -u`.
+`root` is required. A relative `root` resolves against the config file's
+directory, not the current working directory. `diff_tool` names an executable
+on `PATH`; dotfig runs it with the original and modified file paths. When the
+field is absent or the executable is not on `PATH`, dotfig falls back to
+`diff -u`.
+
+A missing config file is an error for commands that need the root; run
+`dotfig init PATH` first. Invalid TOML is an error that names the file. Unknown
+keys produce a warning on stderr and are ignored so older configs keep working.
 
 `~` and environment variables are expanded when the config is loaded. Older
 versions stored the config at `$HOME/.dotfig`; that path is no longer read, so
 run `dotfig init PATH` again after upgrading.
+
+## Bash completions
+
+```sh
+dotfig --completions
+```
+
+This writes a static bash completion script and prints its path on stdout:
+
+```console
+$ dotfig --completions
+/home/you/.local/share/bash-completion/completions/dotfig.bash
+To use it in this shell:
+  source /home/you/.local/share/bash-completion/completions/dotfig.bash
+```
+
+The `source` instruction goes to stderr, so command substitution gets only the
+path. The destination is resolved in this order:
+
+1. The first non-empty entry in `BASH_COMPLETION_USER_DIR`.
+2. `$XDG_DATA_HOME`.
+3. `~/.local/share`.
+
+The file is always named `dotfig.bash` and is overwritten on each run. Regenerate
+it after changing commands or options. Earlier versions wrote an unsuffixed
+`dotfig` file in the same directory; delete it if it is still there.
+
+Bash completion requires **bash 4.4 or newer** and bash-completion 2.18 or newer
+for automatic loading. On macOS, `/bin/bash` is 3.2, so install a newer bash
+(for example `brew install bash`) and use it as your shell. Zsh is not
+supported because dotfig writes bash completions only. `dotfig --completions`
+prints a warning when the `bash` on `PATH` is missing or older than 4.4.
+
+## Man page
+
+`make install` builds the man page with Sphinx and installs it to
+`$XDG_DATA_HOME/man/man1` (or `~/.local/share/man/man1`). View it with:
+
+```sh
+man dotfig
+```
+
+If `man` cannot find the page, add that directory to `MANPATH`:
+
+```sh
+export MANPATH="${XDG_DATA_HOME:-$HOME/.local/share}/man:${MANPATH:-}"
+```
+
+Build it without installing with `make man`, then read
+`docs/_build/man/dotfig.1` directly:
+
+```sh
+man -l docs/_build/man/dotfig.1
+```
+
+The man page is generated from `docs/cli.rst` with sphinx-click; it is not
+committed.
+
+## Documentation
+
+This project publishes the man page only. There is no HTML documentation site.
+The design decisions live in [`docs/adr/`](docs/adr/).
 
 ## Development
 
 Use the `Makefile` as the command runner:
 
 ```sh
-make sync    # create .venv and install dependencies
-make fmt     # format with ruff
-make lint    # lint with ruff --fix
-make type    # typecheck with ty
-make test    # run pytest
-make check   # format check, lint, typecheck, and tests
-make install # install the CLI as an editable uv tool
+make sync     # create .venv and install all dependency groups
+make hooks    # install the git hook that blocks secrets
+make fmt      # format with ruff
+make lint     # lint with ruff and apply safe fixes
+make type     # type-check with ty
+make test     # run pytest with branch coverage
+make check    # format, lint, type, test, and man checks
+make secrets  # scan the repository history with gitleaks
+make build    # build the wheel and sdist into dist/
 ```
+
+`make check` does not modify source files. Use `make fmt` and `make lint` when
+you want fixes.
+
+Run `make hooks` once per clone. It sets `core.hooksPath` to `.githooks`, so
+the pre-commit hook applies to this checkout and its worktrees. The hook needs
+gitleaks 8.19 or newer. `git commit --no-verify` bypasses the hook; CI runs
+`make secrets` as the enforceable gate.
 
 Run a single test directly:
 
@@ -247,8 +353,25 @@ uv run pytest tests/test_core.py -k store
 
 Layout:
 
-- `src/dotfig/cli.py` -- click + rich commands and global options
+- `src/dotfig/cli.py` -- click + rich commands, global options, and consoles
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
 - `src/dotfig/config.py` -- platform config path and TOML load/save
+- `src/dotfig/completions.py` -- static bash completion generator and installer
 - `src/dotfig/diffview.py` -- configured diff viewer with `diff -u` fallback
 - `tests/` -- pytest suite
+- `docs/` -- Sphinx sources for the man page and the ADRs
+
+## Contributing
+
+Report bugs and request features at
+[github.com/8cylinder/dotfig/issues](https://github.com/8cylinder/dotfig/issues).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, and
+[SECURITY.md](SECURITY.md) to report a vulnerability privately. Release notes
+are in [CHANGELOG.md](CHANGELOG.md). Run `make check` before opening a pull
+request.
+
+## License
+
+dotfig is licensed under GPL-2.0-only. See [LICENSE](LICENSE).
+
+Copyright (C) 2026 Sheldon McGrandle
