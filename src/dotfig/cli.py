@@ -345,7 +345,7 @@ def _resolve_store_target(cfg: Config, file: Path) -> Path:
 @click.option(
     "--force",
     is_flag=True,
-    help="Overwrite a differing host path with the stored copy.",
+    help="Overwrite a differing host path or symlink with the stored copy.",
 )
 @_handle_errors
 def restore(

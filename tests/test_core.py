@@ -187,16 +187,38 @@ def test_restore_symlink_raises(cfg: Config, home: Path) -> None:
     assert file.read_text() == "hello"
 
 
-def test_restore_symlink_force_still_raises(cfg: Config, home: Path) -> None:
+def test_restore_symlink_force_replaces_with_copy(
+    cfg: Config, home: Path
+) -> None:
     make_file(cfg.root / ".bashrc", "stored")
-    target = make_file(home / "elsewhere")
+    target = make_file(home / "elsewhere", "foreign")
     file = home / ".bashrc"
     file.symlink_to(target)
-    with pytest.raises(DotfigError, match="break"):
-        core.restore(cfg, Path(".bashrc"), force=True)
-    assert file.is_symlink()
-    assert file.readlink() == target
+    message = core.restore(cfg, Path(".bashrc"), force=True)
+    assert not file.is_symlink()
+    assert file.read_text() == "stored"
+    assert "symlink" in message
+    assert target.read_text() == "foreign"
     assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_force_replaces_broken_symlink(cfg: Config, home: Path) -> None:
+    make_file(cfg.root / ".bashrc", "stored")
+    file = home / ".bashrc"
+    file.symlink_to(home / "missing")
+    core.restore(cfg, Path(".bashrc"), force=True)
+    assert not file.is_symlink()
+    assert file.read_text() == "stored"
+
+
+def test_restore_force_replaces_link_to_store(cfg: Config, home: Path) -> None:
+    store = make_file(cfg.root / ".bashrc", "stored")
+    file = home / ".bashrc"
+    file.symlink_to(store)
+    core.restore(cfg, Path(".bashrc"), force=True)
+    assert not file.is_symlink()
+    assert file.read_text() == "stored"
+    assert store.read_text() == "stored"
 
 
 def test_restore_conflict_detection(cfg: Config, home: Path) -> None:
@@ -210,13 +232,13 @@ def test_restore_conflict_detection(cfg: Config, home: Path) -> None:
     link = home / ".bashrc"
     link.unlink()
     link.symlink_to(foreign)
-    assert not core.restore_conflict(store, link)
+    assert core.restore_conflict(store, link)
     link.unlink()
     link.symlink_to(store)
-    assert not core.restore_conflict(store, link)
+    assert core.restore_conflict(store, link)
 
 
-def test_restore_force_dry_run_symlink_still_refused(
+def test_restore_force_dry_run_symlink_reports_replace(
     cfg: Config, home: Path
 ) -> None:
     make_file(cfg.root / ".bashrc", "stored")
@@ -224,8 +246,8 @@ def test_restore_force_dry_run_symlink_still_refused(
     file = home / ".bashrc"
     file.symlink_to(target)
     report = core.restore(cfg, Path(".bashrc"), dry_run=True, force=True)
-    assert "would copy: no" in report
-    assert "symlink" in report
+    assert "would copy: yes (replace symlink with a copy" in report
+    assert "back up" not in report
     assert file.is_symlink()
     assert file.readlink() == target
 

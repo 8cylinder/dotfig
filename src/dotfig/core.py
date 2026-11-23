@@ -180,16 +180,19 @@ def contents_equal(first: Path, second: Path) -> bool:
 
 
 def restore_conflict(store: Path, host: Path) -> bool:
-    """Check whether restoring over HOST would replace a differing file.
+    """Check whether restoring over HOST would replace something useful.
 
-    Symlinks are not treated as conflicts here because restore refuses them;
-    the caller should direct the user to ``dotfig break`` instead.
+    Symlinks always conflict: force replaces the link with a regular copy of
+    STORE, so the caller should ask for confirmation first.
 
     Returns:
-        Whether HOST is a regular file whose contents differ from STORE.
+        Whether HOST is a symlink or a regular file whose contents differ
+            from STORE.
 
     """
-    if host.is_symlink() or not host.is_file():
+    if host.is_symlink():
+        return True
+    if not host.is_file():
         return False
     return not contents_equal(host, store)
 
@@ -268,7 +271,10 @@ def _dry_run_report(store: Path, host: Path, *, force: bool = False) -> str:
     if host.is_symlink():
         target = _link_target(host)
         same = "yes" if target == store else "no"
-        action = "no (host is a symlink; run 'dotfig break ID' first)"
+        if force:
+            action = f"yes (replace symlink with a copy of {store})"
+        else:
+            action = "no (host is a symlink; pass --force to replace it)"
     elif host.is_dir():
         same = "no"
         action = "no (host is a directory)"
@@ -326,10 +332,13 @@ def restore(
         return _dry_run_report(store, host, force=force)
 
     if host.is_symlink():
-        raise DotfigError(
-            f"{host} is a symlink; run 'dotfig list' and 'dotfig break ID' "
-            "to replace it with a copy"
-        )
+        if not force:
+            raise DotfigError(
+                f"{host} is a symlink; pass --force to replace it with a copy "
+                "(or run 'dotfig break ID')"
+            )
+        _replace_symlink_with_copy(store, host)
+        return f"replaced symlink at {host} with a copy of {store}"
 
     if host.exists():
         if not host.is_file():

@@ -464,7 +464,7 @@ def test_restore_force_diff_opens_viewer(
     assert config.read_text() == "stored\n"
 
 
-def test_restore_force_symlink_refuses(home: Path) -> None:
+def test_restore_force_symlink_replaces(home: Path) -> None:
     root = home / "tree"
     assert run(["init", str(root)]).exit_code == 0
     stored = root / ".bashrc"
@@ -475,17 +475,15 @@ def test_restore_force_symlink_refuses(home: Path) -> None:
     config.symlink_to(foreign)
 
     result = run(["restore", "--force", "a"], "y\n")
-    assert result.exit_code != 0
-    text = output(result)
-    assert "symlink" in text
-    assert "break" in text
-    assert "This will overwrite" not in text
-    assert config.is_symlink()
-    assert config.read_text() == "foreign\n"
+    assert result.exit_code == 0, output(result)
+    assert "This will overwrite" in output(result)
+    assert not config.is_symlink()
+    assert config.read_text() == "stored\n"
+    assert foreign.read_text() == "foreign\n"
     assert not (home / ".bashrc.BAK").exists()
 
 
-def test_restore_force_symlink_diff_then_refuses(
+def test_restore_force_symlink_diff_then_replaces(
     home: Path, diff_viewer: list[tuple[Path, Path]]
 ) -> None:
     root = home / "tree"
@@ -498,11 +496,45 @@ def test_restore_force_symlink_diff_then_refuses(
     config.symlink_to(foreign)
 
     result = run(["restore", "--force", "--diff", "a"], "y\n")
-    assert result.exit_code != 0
+    assert result.exit_code == 0, output(result)
     assert diff_viewer == [(config, stored)]
+    assert not config.is_symlink()
+    assert config.read_text() == "stored\n"
+    assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_force_symlink_prompt_aborts(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    foreign = home / "elsewhere"
+    foreign.write_text("foreign\n")
+    config = home / ".bashrc"
+    config.symlink_to(foreign)
+
+    result = run(["restore", "--force", "a"], "n\n")
+    assert result.exit_code != 0
+    assert "Continue?" in output(result)
     assert config.is_symlink()
     assert config.read_text() == "foreign\n"
     assert not (home / ".bashrc.BAK").exists()
+
+
+def test_restore_force_dry_run_symlink_reports_replace(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    foreign = home / "elsewhere"
+    foreign.write_text("foreign\n")
+    config = home / ".bashrc"
+    config.symlink_to(foreign)
+
+    result = run(["restore", "--dry-run", "--force", "a"])
+    assert result.exit_code == 0, output(result)
+    assert "would copy: yes (replace symlink with a copy" in output(result)
+    assert "Continue?" not in output(result)
+    assert config.is_symlink()
+    assert config.read_text() == "foreign\n"
 
 
 def test_restore_force_overwrites_different_contents(home: Path) -> None:

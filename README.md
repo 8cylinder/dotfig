@@ -182,8 +182,10 @@ whether a copy would be made (or why not).
   copy. `--force` asks for confirmation (`Continue? [y/N/(d)iff]`) before
   overwriting; answer `d` to show the diff and be asked again. Showing a diff
   needs an interactive terminal; otherwise dotfig reports an error.
-- If the host path is a symlink: error, even with `--force`. Run
-  `dotfig break ID` first to turn the link into a regular copy.
+- If the host path is a symlink: error. Pass `--force` to ask for confirmation
+  and replace the link (including a broken link or one pointing into the root)
+  with a regular copy of the stored file; the link target is left untouched and
+  no `.BAK` is made. `dotfig break ID` still converts a managed link.
 - If the host path is a directory: error.
 - If there is no stored copy: error (`nothing to restore`).
 
