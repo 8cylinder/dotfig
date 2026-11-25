@@ -139,9 +139,11 @@ and files whose names end in `.BAK` (backups made by `--force`) are not
 listed.
 
 When output is piped, `dotfig list` prints one row per entry with no header:
-`id`, `store`, `host`, and `status` separated by tabs, without colors. When the
-`State` column is present, each row gains a fifth field with the state, or `-`
-for a matching entry. This is intended for tools such as `cut`:
+`id`, `store`, `host`, and `status` separated by tabs, without colors. The
+`store` and `host` fields are absolute paths, unlike the `~`-shortened paths in
+the terminal table. When the `State` column is present, each row gains a fifth
+field with the state, or `-` for a matching entry. This is intended for tools
+such as `cut`:
 
 ```sh
 dotfig list | cut -f1,3

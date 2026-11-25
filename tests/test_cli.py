@@ -685,7 +685,9 @@ def test_list_pipe_is_tab_separated(home: Path) -> None:
 
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
-    assert listed.output.splitlines() == ["a\t~/tree/.bashrc\t~/.bashrc\t✓"]
+    assert listed.output.splitlines() == [
+        f"a\t{root}/.bashrc\t{home}/.bashrc\t✓"
+    ]
 
 
 def test_list_pipe_adds_state_when_a_host_differs(home: Path) -> None:
@@ -702,8 +704,8 @@ def test_list_pipe_adds_state_when_a_host_differs(home: Path) -> None:
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
     assert listed.output.splitlines() == [
-        "a\t~/tree/.bashrc\t~/.bashrc\t✗\tdiffers",
-        "b\t~/tree/.vimrc\t~/.vimrc\t✓\t-",
+        f"a\t{root}/.bashrc\t{home}/.bashrc\t✗\tdiffers",
+        f"b\t{root}/.vimrc\t{home}/.vimrc\t✓\t-",
     ]
 
 
@@ -804,7 +806,7 @@ def test_no_args_lists_entries(home: Path) -> None:
     result = run([])
     assert result.exit_code == 0, output(result)
     assert result.output == run(["list"]).output
-    assert "~/.bashrc" in output(result)
+    assert str(config) in output(result)
 
 
 def test_no_args_without_init_fails(home: Path) -> None:

@@ -303,8 +303,8 @@ def list_command() -> None:
             symbol = "✓" if entry.matches else "✗"
             fields = [
                 core.entry_id(index),
-                core.display_path(home, entry.store),
-                core.display_path(home, entry.host),
+                str(entry.store),
+                str(entry.host),
                 symbol,
             ]
             if has_issue:
@@ -319,6 +319,7 @@ def list_command() -> None:
         box=box.SIMPLE_HEAD,
         show_edge=False,
         pad_edge=False,
+        border_style="dim",
     )
     for index, entry in enumerate(entries):
         symbol = "✓" if entry.matches else "✗"
@@ -326,7 +327,7 @@ def list_command() -> None:
         path_color = "cyan" if entry.matches else "yellow"
         common = str(entry.store.relative_to(cfg.root))
         row = [
-            core.entry_id(index),
+            f"[bright_white]{escape(core.entry_id(index))}[/]",
             _color_common(
                 core.display_path(home, entry.store), common, path_color
             ),
