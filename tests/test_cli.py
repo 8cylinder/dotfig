@@ -53,7 +53,7 @@ def test_print_diff_opens_viewer(
     target.write_text("new\n")
     current.write_text("old\n")
 
-    _print_diff(cfg, target, current)
+    _print_diff(cfg, host=current, store=target)
 
     assert diff_viewer == [(current, target)]
 
@@ -77,7 +77,7 @@ def test_print_diff_passes_configured_tool(
     monkeypatch.setattr(module, "_can_use_tui", lambda: True)
     cfg = Config(root=tmp_path / "root", diff_tool="diffuse")
 
-    _print_diff(cfg, target, current)
+    _print_diff(cfg, host=current, store=target)
 
     assert calls == [(current, target, "diffuse")]
 
@@ -213,7 +213,7 @@ def test_store_force_prompt_shows_diff_then_aborts(
     result = run(["store", "--force", str(config)], "d\nn\n")
     assert result.exit_code != 0
     assert output(result).count("Continue? [y/N/(d)iff]") > 1
-    assert diff_viewer == [(stored, config)]
+    assert diff_viewer == [(config, stored)]
     assert config.read_text() == "local\n"
     assert not config.is_symlink()
     assert stored.read_text() == "stored\n"
@@ -686,7 +686,7 @@ def test_list_pipe_is_tab_separated(home: Path) -> None:
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
     assert listed.output.splitlines() == [
-        f"a\t{root}/.bashrc\t{home}/.bashrc\t✓"
+        f"a\t{home}/.bashrc\t{root}/.bashrc\t✓"
     ]
 
 
@@ -704,8 +704,8 @@ def test_list_pipe_adds_state_when_a_host_differs(home: Path) -> None:
     listed = run(["list"])
     assert listed.exit_code == 0, output(listed)
     assert listed.output.splitlines() == [
-        f"a\t{root}/.bashrc\t{home}/.bashrc\t✗\tdiffers",
-        f"b\t{root}/.vimrc\t{home}/.vimrc\t✓\t-",
+        f"a\t{home}/.bashrc\t{root}/.bashrc\t✗\tdiffers",
+        f"b\t{home}/.vimrc\t{root}/.vimrc\t✓\t-",
     ]
 
 

@@ -303,15 +303,15 @@ def list_command() -> None:
             symbol = "✓" if entry.matches else "✗"
             fields = [
                 core.entry_id(index),
-                str(entry.store),
                 str(entry.host),
+                str(entry.store),
                 symbol,
             ]
             if has_issue:
                 fields.append("-" if entry.matches else entry.state.value)
             click.echo("\t".join(fields))
         return
-    headers = ["ID", "Store", "Host", "Status"]
+    headers = ["ID", "Host", "Store", "Status"]
     if has_issue:
         headers.append("State")
     table = Table(
@@ -329,10 +329,10 @@ def list_command() -> None:
         row = [
             f"[bright_white]{escape(core.entry_id(index))}[/]",
             _color_common(
-                core.display_path(home, entry.store), common, path_color
+                core.display_path(home, entry.host), common, path_color
             ),
             _color_common(
-                core.display_path(home, entry.host), common, path_color
+                core.display_path(home, entry.store), common, path_color
             ),
             f"[{color}]{symbol}[/]",
         ]
@@ -359,7 +359,7 @@ def diff(entry_id: str) -> None:
             f"{escape(str(host))} matches the stored copy", soft_wrap=True
         )
         return
-    _print_diff(cfg, store, host)
+    _print_diff(cfg, host=host, store=store)
 
 
 @cli.command(cls=AppCommand)
@@ -380,7 +380,9 @@ def store(file: Path, *, force: bool) -> None:
     if force and not core.inside_root(cfg, file):
         stored = core.store_path(cfg, file)
         if _store_conflicts(stored, file):
-            _confirm_overwrite(cfg, target=file, current=stored)
+            _confirm_overwrite(
+                cfg, target=file, current=stored, host=file, store=stored
+            )
     _print_result(core.store(cfg, file, force=force))
 
 
@@ -438,7 +440,9 @@ def restore(
     if force and not dry_run:
         stored, host = core.restore_paths(cfg, entry.store)
         if stored.is_file() and core.restore_conflict(stored, host):
-            _confirm_overwrite(cfg, target=stored, current=host)
+            _confirm_overwrite(
+                cfg, target=stored, current=host, host=host, store=stored
+            )
     _print_result(core.restore(cfg, entry.store, dry_run=dry_run, force=force))
 
 
@@ -468,15 +472,15 @@ def _show_diff(cfg: Config, file: Path) -> None:
         and host.is_file()
         and not core.contents_equal(store, host)
     ):
-        _print_diff(cfg, store, host)
+        _print_diff(cfg, host=host, store=store)
 
 
 def _can_use_tui() -> bool:
     return all((sys.stdin.isatty(), sys.stdout.isatty()))
 
 
-def _print_diff(cfg: Config, target: Path, current: Path) -> None:
-    """Show the difference between CURRENT and TARGET.
+def _print_diff(cfg: Config, *, host: Path, store: Path) -> None:
+    """Show STORE on the right and HOST on the left.
 
     Raises:
         DotfigError: If stdout/stdin are not an interactive terminal, or the
@@ -485,10 +489,17 @@ def _print_diff(cfg: Config, target: Path, current: Path) -> None:
     """
     if not _can_use_tui():
         raise DotfigError("showing a diff requires an interactive terminal")
-    show_diff(current, target, tool=cfg.diff_tool)
+    show_diff(host, store, tool=cfg.diff_tool)
 
 
-def _confirm_overwrite(cfg: Config, *, target: Path, current: Path) -> None:
+def _confirm_overwrite(
+    cfg: Config,
+    *,
+    target: Path,
+    current: Path,
+    host: Path,
+    store: Path,
+) -> None:
     while True:
         answer = str(
             click.prompt(
@@ -501,7 +512,7 @@ def _confirm_overwrite(cfg: Config, *, target: Path, current: Path) -> None:
             )
         ).lower()
         if answer == "d":
-            _print_diff(cfg, target, current)
+            _print_diff(cfg, host=host, store=store)
             continue
         if answer == "y":
             return

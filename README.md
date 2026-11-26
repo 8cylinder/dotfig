@@ -62,8 +62,8 @@ ok wrote /home/you/.config/dotfig/config.toml
 $ dotfig store ~/.bashrc
 ok stored /home/you/.bashrc
 $ dotfig list
-ID   Store                 Host          Status
-a    ~/dotfiles/.bashrc    ~/.bashrc     ✓
+ID   Host          Store                 Status
+a    ~/.bashrc     ~/dotfiles/.bashrc    ✓
 ```
 
 Restore it on another machine after cloning `~/dotfiles`:
@@ -120,8 +120,8 @@ dotfig init ~/dotfiles
 dotfig list
 ```
 
-List every stored file with four columns by default: `ID`, `Store` (the stored
-path in the root), `Host` (the mirrored path under `$HOME`), and `Status`: `✓`
+List every stored file with four columns by default: `ID`, `Host` (the mirrored
+path under `$HOME`), `Store` (the stored path in the root), and `Status`: `✓`
 when the host path is a regular file with identical contents, `✗` when it
 differs, is missing, is not a regular file, or is still a symlink. When any
 entry is `✗`, `list` adds a `State` column saying why: `missing`, `symlink` (a
@@ -159,10 +159,11 @@ dotfig diff ID
 
 Show the difference between the entry with `ID` and its host path under
 `$HOME`. `ID` is the identifier shown by `dotfig list`; it is case-insensitive.
-This is the same view that `restore --diff` opens: the host path is the original
-side and the stored copy is the modified side. It uses the `diff_tool` from the
-config, falling back to `diff -u` when the field is unset or the tool is not on
-`PATH`, and needs an interactive terminal.
+This is the same view that `restore --diff` and the `--force` prompt open: in
+every diff, the host path is the original (left) side and the stored copy is
+the modified (right) side. It uses the `diff_tool` from the config, falling
+back to `diff -u` when the field is unset or the tool is not on `PATH`, and
+needs an interactive terminal.
 
 If the host path is missing or is not a file, the command fails. If the contents
 match, it reports that and does not open the viewer.
