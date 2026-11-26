@@ -25,6 +25,23 @@ def output(result: Result) -> str:
     return result.output
 
 
+def fake_ask(
+    monkeypatch: pytest.MonkeyPatch, choice: str | None
+) -> list[tuple[Path, Path, str | None]]:
+    calls: list[tuple[Path, Path, str | None]] = []
+
+    def ask(
+        original: Path, modified: Path, *, tool: str | None = None
+    ) -> str | None:
+        calls.append((original, modified, tool))
+        return choice
+
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "ask_sync_direction", ask)
+    monkeypatch.setattr(module, "_can_ask", lambda: True)
+    return calls
+
+
 def test_color_common_marks_trailing_shared_path() -> None:
     common = ".config/cm/.env"
     assert _color_common("~/bin/dotfig/.config/cm/.env", common) == (
@@ -397,6 +414,198 @@ def test_diff_requires_terminal(
     monkeypatch.setattr(module, "_can_use_tui", lambda: False)
 
     result = run(["diff", "a"])
+    assert result.exit_code != 0
+    assert "terminal" in output(result)
+
+
+def test_sync_to_store_copies_host_and_backs_up(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code == 0, output(result)
+    assert calls == [(config, stored, None)]
+    assert stored.read_text() == "local\n"
+    assert (root / ".bashrc.BAK").read_text() == "stored\n"
+    assert config.read_text() == "local\n"
+    assert "backed up" in output(result)
+
+
+def test_sync_to_host_copies_store_and_backs_up(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    calls = fake_ask(monkeypatch, "to_host")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code == 0, output(result)
+    assert calls == [(config, stored, None)]
+    assert config.read_text() == "stored\n"
+    assert (home / ".bashrc.BAK").read_text() == "local\n"
+    assert stored.read_text() == "stored\n"
+    assert "backed up" in output(result)
+
+
+def test_sync_cancel_changes_nothing(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    stored = root / ".bashrc"
+    stored.write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    calls = fake_ask(monkeypatch, None)
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code == 0, output(result)
+    assert calls == [(config, stored, None)]
+    assert config.read_text() == "local\n"
+    assert stored.read_text() == "stored\n"
+    assert "cancelled" in output(result)
+    assert not (home / ".bashrc.BAK").exists()
+    assert not (root / ".bashrc.BAK").exists()
+
+
+def test_sync_reports_matching_files_without_asking(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    config = home / ".bashrc"
+    config.write_text("same\n")
+    assert run(["store", str(config)]).exit_code == 0
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code == 0, output(result)
+    assert "matches the stored copy" in output(result)
+    assert calls == []
+
+
+def test_sync_uses_configured_tool(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    config = home / ".bashrc"
+    config.write_text("local\n")
+    with config_path().open("a", encoding="utf-8") as handle:
+        handle.write('diff_tool = "diffuse"\n')
+    calls = fake_ask(monkeypatch, "to_host")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code == 0, output(result)
+    assert calls == [(config, root / ".bashrc", "diffuse")]
+
+
+def test_sync_missing_host_fails(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code != 0
+    assert "does not exist" in output(result)
+    assert calls == []
+
+
+def test_sync_rejects_directory_host(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    (home / ".bashrc").mkdir()
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code != 0
+    assert "not a file" in output(result)
+    assert calls == []
+
+
+def test_sync_rejects_host_symlink(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    target = home / "elsewhere"
+    target.write_text("foreign\n")
+    (home / ".bashrc").symlink_to(target)
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code != 0
+    assert "symlink" in output(result)
+    assert calls == []
+
+
+def test_sync_rejects_symlinked_stored_copy(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    target = home / "elsewhere"
+    target.write_text("foreign\n")
+    (root / ".bashrc").symlink_to(target)
+    calls = fake_ask(monkeypatch, "to_store")
+
+    result = run(["sync", "a"])
+
+    assert result.exit_code != 0
+    assert "no stored regular file" in output(result)
+    assert calls == []
+
+
+def test_sync_rejects_unknown_id(home: Path) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+
+    result = run(["sync", "z"])
+
+    assert result.exit_code != 0
+    assert "unknown entry id" in output(result)
+
+
+def test_sync_requires_terminal(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = home / "tree"
+    assert run(["init", str(root)]).exit_code == 0
+    (root / ".bashrc").write_text("stored\n")
+    (home / ".bashrc").write_text("local\n")
+    module = importlib.import_module("dotfig.cli")
+    monkeypatch.setattr(module, "_can_ask", lambda: False)
+
+    result = run(["sync", "a"])
+
     assert result.exit_code != 0
     assert "terminal" in output(result)
 
@@ -966,7 +1175,7 @@ def test_normal_output_goes_to_stdout(home: Path) -> None:
 
 
 def test_help_flags_for_every_command() -> None:
-    commands = ("init", "list", "diff", "store", "restore")
+    commands = ("init", "list", "diff", "sync", "store", "restore")
     for command in commands:
         for flag in ("-h", "--help"):
             result = run([command, flag])

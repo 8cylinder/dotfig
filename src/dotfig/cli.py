@@ -18,10 +18,12 @@ from rich.table import Table
 from . import core
 from .completions import completions_callback
 from .config import Config, DotfigError, config_path
-from .diffview import show_diff
+from .diffview import ask_sync_direction, show_diff
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+
+    from .diffview import SyncDirection
 
 COLORS = ("auto", "always", "never")
 
@@ -141,6 +143,23 @@ def _diff_paths(cfg: Config, entry: core.Entry) -> tuple[Path, Path]:
         raise DotfigError(f"{host} does not exist; nothing to diff")
     if not host.is_file():
         raise DotfigError(f"{host} is not a file; nothing to diff")
+    return store, host
+
+
+def _sync_paths(cfg: Config, entry: core.Entry) -> tuple[Path, Path]:
+    store, host = core.restore_paths(cfg, entry.store)
+    if not store.is_file() or store.is_symlink():
+        raise DotfigError(f"no stored regular file at {store}; nothing to sync")
+    if host.is_symlink():
+        raise DotfigError(
+            f"{host} is a symlink; run 'dotfig break ID' before syncing"
+        )
+    if not host.exists():
+        raise DotfigError(
+            f"{host} does not exist; run 'dotfig restore ID' first"
+        )
+    if not host.is_file():
+        raise DotfigError(f"{host} is not a file; nothing to sync")
     return store, host
 
 
@@ -363,6 +382,32 @@ def diff(entry_id: str) -> None:
 
 
 @cli.command(cls=AppCommand)
+@click.argument("entry_id", metavar="ID")
+@_handle_errors
+def sync(entry_id: str) -> None:
+    """Sync the entry with ID in the direction chosen in a diff.
+
+    ID is the identifier shown by 'dotfig list'.
+    """
+    cfg = Config.load()
+    entry = core.find_entry(core.list_managed(cfg), entry_id)
+    store, host = _sync_paths(cfg, entry)
+    if core.contents_equal(store, host):
+        _output().console.print(
+            f"{escape(str(host))} matches the stored copy", soft_wrap=True
+        )
+        return
+    choice = _ask_direction(cfg, host=host, store=store)
+    if choice is None:
+        _output().console.print("cancelled; nothing changed", soft_wrap=True)
+        return
+    if choice == "to_store":
+        _print_result(core.store(cfg, host, force=True))
+    else:
+        _print_result(core.restore(cfg, store, force=True))
+
+
+@cli.command(cls=AppCommand)
 @click.argument("file", metavar="FILE|ID", type=click.Path(path_type=Path))
 @click.option(
     "--force",
@@ -477,6 +522,18 @@ def _show_diff(cfg: Config, file: Path) -> None:
 
 def _can_use_tui() -> bool:
     return all((sys.stdin.isatty(), sys.stdout.isatty()))
+
+
+def _can_ask() -> bool:
+    return all((sys.stdin.isatty(), sys.stderr.isatty()))
+
+
+def _ask_direction(
+    cfg: Config, *, host: Path, store: Path
+) -> SyncDirection | None:
+    if not _can_ask():
+        raise DotfigError("syncing requires an interactive terminal")
+    return ask_sync_direction(host, store, tool=cfg.diff_tool)
 
 
 def _print_diff(cfg: Config, *, host: Path, store: Path) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess  # ruff: ignore[suspicious-subprocess-import]
 from pathlib import Path
 
@@ -150,3 +151,127 @@ def test_show_diff_resolves_symlinks(
     diffview.show_diff(link, modified, tool="diffuse")
 
     assert calls == [["/usr/bin/diffuse", str(target), str(modified)]]
+
+
+def fake_ask_run(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stdout: str = "",
+    returncode: int = 0,
+) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def run(
+        args: list[str],
+        *,
+        stdout: int,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert stdout is subprocess.PIPE
+        assert text is True
+        assert check is False
+        calls.append(args)
+        return subprocess.CompletedProcess(args, returncode, stdout=output)
+
+    output = stdout
+    monkeypatch.setattr(diffview.subprocess, "run", run)
+    return calls
+
+
+def test_ask_sync_direction_passes_panels_and_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    calls = fake_ask_run(monkeypatch, stdout="to_store\n")
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diffuse" if name == "diffuse" else None,
+    )
+
+    choice = diffview.ask_sync_direction(original, modified, tool="diffuse")
+
+    assert choice == "to_store"
+    assert calls[0][:2] == ["/usr/bin/diffuse", "--ask"]
+    assert json.loads(calls[0][2]) == {
+        "panels": [
+            {
+                "label": "Host",
+                "button_text": "To store -->",
+                "return_value": "to_store",
+            },
+            {
+                "label": "Store",
+                "button_text": "<-- To host",
+                "return_value": "to_host",
+            },
+        ]
+    }
+    assert calls[0][3:] == [str(original), str(modified)]
+
+
+def test_ask_sync_direction_defaults_to_diffuse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    fake_ask_run(monkeypatch, stdout="to_host\n")
+    monkeypatch.setattr(
+        diffview.shutil,
+        "which",
+        lambda name: "/usr/bin/diffuse" if name == "diffuse" else None,
+    )
+
+    assert diffview.ask_sync_direction(original, modified) == "to_host"
+
+
+def test_ask_sync_direction_treats_empty_output_as_cancel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    fake_ask_run(monkeypatch)
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/diffuse")
+
+    assert diffview.ask_sync_direction(original, modified) is None
+
+
+def test_ask_sync_direction_rejects_unknown_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    fake_ask_run(monkeypatch, stdout="sideways\n")
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/diffuse")
+
+    with pytest.raises(DotfigError, match="unexpected diffuse result"):
+        diffview.ask_sync_direction(original, modified)
+
+
+def test_ask_sync_direction_reports_tool_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    fake_ask_run(monkeypatch, returncode=2)
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: "/usr/bin/diffuse")
+
+    with pytest.raises(DotfigError, match="diffuse exited with status 2"):
+        diffview.ask_sync_direction(original, modified)
+
+
+def test_ask_sync_direction_requires_diffuse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: None)
+
+    with pytest.raises(DotfigError, match="diffuse was not found"):
+        diffview.ask_sync_direction(original, modified)
+
+
+def test_ask_sync_direction_reports_missing_configured_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original, modified = make_pair(tmp_path)
+    monkeypatch.setattr(diffview.shutil, "which", lambda _: None)
+
+    with pytest.raises(DotfigError, match="diff tool 'other' was not found"):
+        diffview.ask_sync_direction(original, modified, tool="other")

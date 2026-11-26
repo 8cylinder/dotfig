@@ -23,6 +23,9 @@ machines to sync your configs.
   paths and the commit hook is a bash script.
 - An optional external diff viewer on `PATH` for `dotfig diff` and the `d`
   prompt. Set `diff_tool` in the config; without it, dotfig uses `diff -u`.
+- `diffuse` on `PATH` for `dotfig sync`. The configured `diff_tool` is used
+  when set; otherwise dotfig runs `diffuse`. The tool must support diffuse's
+  `--ask` mode.
 
 ## Installation
 
@@ -167,6 +170,27 @@ needs an interactive terminal.
 
 If the host path is missing or is not a file, the command fails. If the contents
 match, it reports that and does not open the viewer.
+
+### sync
+
+```sh
+dotfig sync ID
+```
+
+Show the difference between the entry with `ID` and its host path, with buttons
+for copying either direction. `ID` is the identifier shown by `dotfig list`; it
+is case-insensitive. The host is the left panel and the stored copy is the
+right panel. Choosing `To store -->` copies the host file into the root (like
+`store --force`); choosing `<-- To host` copies the stored file back (like
+`restore --force`). Overwritten files are backed up to `<name>.BAK`. Cancelling
+leaves both files unchanged.
+
+The command uses the configured `diff_tool`, or `diffuse` when it is unset; the
+tool must support diffuse's `--ask` mode. Both files must already exist as
+regular files. A missing host or a symlink is an error: run `dotfig restore ID`
+for a missing host or `dotfig break ID` for a symlink first. If the files
+already match, `sync` reports that and does not open the viewer. It needs an
+interactive terminal.
 
 ### store
 
@@ -366,7 +390,8 @@ Layout:
 - `src/dotfig/core.py` -- store/restore/list state machine and path mapping
 - `src/dotfig/config.py` -- platform config path and TOML load/save
 - `src/dotfig/completions.py` -- static bash completion generator and installer
-- `src/dotfig/diffview.py` -- configured diff viewer with `diff -u` fallback
+- `src/dotfig/diffview.py` -- configured diff viewer with `diff -u` fallback,
+  plus diffuse `--ask` mode for `sync`
 - `tests/` -- pytest suite
 - `docs/` -- Sphinx sources for the man page and the ADRs
 

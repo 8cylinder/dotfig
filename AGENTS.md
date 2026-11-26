@@ -30,9 +30,9 @@
   store/restore/list state machine and path mapping; `config.py` -- platform
   config path and TOML load/save; `completions.py` -- static bash completion
   generation and installation; `diffview.py` -- shells out to the configured
-  `diff_tool`, falling back to `diff -u`. Entry point `dotfig:main` in
-  `src/dotfig/__init__.py`.
-- README is the behavior spec for `core.py` (`init` / `list` / `diff` /
+  `diff_tool`, falling back to `diff -u`, and runs diffuse `--ask` for `sync`.
+  Entry point `dotfig:main` in `src/dotfig/__init__.py`.
+- README is the behavior spec for `core.py` (`init` / `list` / `diff` / `sync` /
   `store` / `restore`) and the installation/development guide.
 - Running `dotfig` with no subcommand invokes `list` (the group uses
   `invoke_without_command` and `no_args_is_help=False`). This is intentional;

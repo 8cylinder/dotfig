@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `dotfig sync ID` opens the host and stored copy in diffuse's ask mode and
+  copies the file in the selected direction, without a separate confirmation.
 - `dotfig list` adds a `State` column when a host file is missing, a live or
   broken symlink, not a regular file, or different from the stored copy. Piped
   output gains a fifth field at the same time.

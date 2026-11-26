@@ -203,7 +203,7 @@ def test_header_names_app_and_version(tmp_path: Path) -> None:
 def test_subcommand_completion(tmp_path: Path) -> None:
     replies = dotfig_complete(["dotfig", ""], 1, tmp_path)
 
-    assert replies == ["init", "list", "diff", "store", "restore"]
+    assert replies == ["init", "list", "diff", "sync", "store", "restore"]
     assert "break" not in replies
 
 

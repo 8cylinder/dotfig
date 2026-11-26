@@ -13,8 +13,8 @@ DESCRIPTION
 
 ``dotfig`` keeps copies of individual files in a root directory that mirrors
 their path in ``$HOME``. Store a file to copy it into the root; restore an
-entry to copy it back. The root can be a git repository, so the stored copies
-travel between machines.
+entry to copy it back, or sync either direction from a diff. The root can be a
+git repository, so the stored copies travel between machines.
 
 COMMANDS
 --------
